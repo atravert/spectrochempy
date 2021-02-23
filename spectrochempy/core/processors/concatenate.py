@@ -16,6 +16,7 @@ from orderedset import OrderedSet
 
 from spectrochempy.core.dataset.nddataset import NDDataset
 from spectrochempy.core.dataset.coord import Coord
+from spectrochempy.core.dataset.coordset import CoordSet
 from spectrochempy.core.dataset.ndarray import DEFAULT_DIM_NAME
 from spectrochempy.utils import SpectroChemPyWarning, DimensionsCompatibilityError
 
@@ -250,22 +251,43 @@ def concatenate(*datasets, **kwargs):
         # concatenation of the labels (fist check the presence of at least one labeled coordinates)
         is_labeled = False
         for i, c in enumerate(coordss):
-            if c[dim].is_labeled:
-                # at least one of the coord is labeled
-                is_labeled = True
-                break
+            if isinstance(c[dim], Coord):
+                # this is a coord
+                if c[dim].is_labeled:
+                    # at least one of the coord is labeled
+                    is_labeled = True
+                    break
+            if isinstance(c[dim], CoordSet):
+                # this is a coordset
+                for coord in c[dim]:
+                    if coord.is_labeled:
+                        # at least one of the coord is labeled
+                        is_labeled = True
+                        break
 
         if is_labeled:
             labels = []
             # be sure that now all the coordinates have a label, or create one
             for i, c in enumerate(coordss):
-                if c[dim].is_labeled:
-                    labels.append(c[dim].labels)
-                else:
-                    labels.append(str(i))
+                if isinstance(c[dim], Coord):
+                    # this is a coord
+                    if c[dim].is_labeled:
+                        labels.append(c[dim].labels)
+                    else:
+                        labels.append(str(i))
+                if isinstance(c[dim], CoordSet):
+                    # this is a coordset
+                    for coord in c[dim]:
+                        if coord.is_labeled:
+                            labels.append(c[dim].labels)
+                        else:
+                            labels.append(str(i))
 
-            coords[dim]._labels = np.concatenate(labels)
-
+            if isinstance(coords[dim], Coord):
+                coords[dim]._labels = np.concatenate(labels)
+            if isinstance(coords[dim], CoordSet):
+                for i, coord in enumerate(coords[dim]):
+                    coord._labels = np.concatenate(labels[i::len(coords[dim])])
     out = NDDataset(data, coordset=coords, mask=mask, units=units)
     # for ss in sss:
     #     ss = ss.squeeze()
