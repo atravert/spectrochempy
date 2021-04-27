@@ -24,11 +24,11 @@ FILETYPES = [('scp', 'SpectroChemPy files (*.scp)'), ('omnic', 'Nicolet OMNIC fi
              ('matlab', 'MATLAB files (*.mat)'), ('dso', 'Data Set Object files (*.dso)'),
              ('jcamp', 'JCAMP-DX files (*.jdx *.dx)'), ('csv', 'CSV files (*.csv)'),
              ('excel', 'Microsoft Excel files (*.xls)'), ('zip', 'Compressed folder of data files (*.zip)'),
-             ('quadera', 'Quadera ascii files (*.asc)')
+             ('quadera', 'Quadera ascii files (*.asc)'), ('setaram', 'Setaram exported files (*.txt)')
              #  ('all', 'All files (*.*)')
              ]
 ALIAS = [('spg', 'omnic'), ('spa', 'omnic'), ('srs', 'omnic'), ('mat', 'matlab'), ('txt', 'labspec'), ('jdx', 'jcamp'),
-         ('dx', 'jcamp'), ('xls', 'excel'), ('asc', 'quadera')]
+         ('dx', 'jcamp'), ('xls', 'excel'), ('asc', 'quadera'), ('txt', 'setaram')]
 
 
 # ----------------------------------------------------------------------------------------------------------------------
