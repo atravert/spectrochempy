@@ -339,6 +339,7 @@ class NDIO(HasTraits):
 
         from spectrochempy.core.project.project import Project
         from spectrochempy.core.dataset.nddataset import NDDataset
+        from spectrochempy.analysis.iris import IRIS
         from spectrochempy.core.scripts.script import Script
 
         # .........................
@@ -382,6 +383,10 @@ class NDIO(HasTraits):
                         # v) for k, v in val.items()]
                         datasets = [item_to_attr(NDDataset(), js) for js in val]
                         obj.datasets = datasets
+
+                    elif key in ["_irises"]:
+                        irises = [item_to_attr(IRIS(), js) for js in val]
+                        obj.irises = irises
 
                     elif key in ["_projects"]:
                         projects = [item_to_attr(Project(), js) for js in val]

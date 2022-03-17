@@ -16,6 +16,7 @@ import dill
 from traitlets import Dict, Instance, Unicode, This, default
 
 from spectrochempy.core.dataset.nddataset import NDDataset, NDIO
+from spectrochempy.analysis.iris import IRIS
 from spectrochempy.core.scripts.script import Script
 from spectrochempy.core.dataset.meta import Meta
 from spectrochempy.core.project.baseproject import AbstractProject
@@ -76,6 +77,7 @@ class Project(AbstractProject, NDIO):
     _parent = This()
     _projects = Dict(This)
     _datasets = Dict(Instance(NDDataset))
+    _irises = Dict(Instance(IRIS))
     _scripts = Dict(Instance(Script))
     _others = Dict()
     _meta = Instance(Meta)
@@ -113,6 +115,9 @@ class Project(AbstractProject, NDIO):
 
         elif isinstance(obj, type(self)):  # can not use Project here!
             self.add_project(obj, name)
+
+        elif isinstance(obj, IRIS):
+            self.add_iris(obj, name)
 
         elif isinstance(obj, Script):
             self.add_script(obj, name)
@@ -158,10 +163,14 @@ class Project(AbstractProject, NDIO):
             if parent in self.projects_names:
                 if key in self._projects[parent].datasets_names:
                     return self._projects[parent]._datasets[key]
+                if key in self._projects[parent].irises_names:
+                    return self._projects[parent]._irises[key]
                 elif key in self._projects[parent].scripts_names:
                     return self._projects[parent]._scripts[key]
         if key in self.datasets_names:
             return self._datasets[key]
+        elif key in self.irises_names:
+            return self._irises[key]
         elif key in self.projects_names:
             return self._projects[key]
         elif key in self.scripts_names:
@@ -184,6 +193,9 @@ class Project(AbstractProject, NDIO):
         if key in self.datasets_names:
             value.parent = self
             self._datasets[key] = value
+        elif key in self.irises_names:
+            value.parent = self
+            self._irises[key] = value
         elif key in self.projects_names:
             value.parent = self
             self._projects[key] = value
@@ -237,6 +249,9 @@ class Project(AbstractProject, NDIO):
             for k, v in project._datasets.items():
                 s += "{} ⤷ {} (dataset)\n".format(sep, k)
 
+            for k, v in project._irises.items():
+                s += "{} ⤷ {} (iris)\n".format(sep, k)
+
             for k, v in project._scripts.items():
                 s += "{} ⤷ {} (script)\n".format(sep, k)
 
@@ -254,6 +269,7 @@ class Project(AbstractProject, NDIO):
             "meta",
             "parent",
             "datasets",
+            "irises",
             "projects",
             "scripts",
         ]
@@ -275,7 +291,7 @@ class Project(AbstractProject, NDIO):
             data = getattr(self, item)
             # if isinstance(data, (Project,NDDataset, Script)):
             #     setattr(new, item, data.copy())
-            # elif item in ['_datasets', '_projects', '_scripts']:
+            # elif item in ['_datasets', '_irises', '_projects', '_scripts']:
             #
             # else:
             setattr(new, item, cpy(data))
@@ -440,6 +456,31 @@ class Project(AbstractProject, NDIO):
 
         self.add_scripts(*scripts)
 
+    # ..........................................................................
+    @property
+    def irises_names(self):
+        """
+        Names of all iris included in this project (list).
+        """
+        lst = list(self._irises.keys())
+        return lst
+
+    @property
+    def irises(self):
+        """
+        IRIS included in this project excluding those
+        located in subprojects (list).
+        """
+        d = []
+        for name in self.irises_names:
+            d.append(self._irises[name])
+        return d
+
+    @irises.setter
+    def irises(self, irises):
+
+        self.add_irises(*irises)
+
     @property
     def allnames(self):
         """
@@ -573,6 +614,95 @@ class Project(AbstractProject, NDIO):
         for v in self._datasets.values():
             v._parent = None
         self._datasets = {}
+
+    # ------------------------------------------------------------------------
+    # iris items
+    # ------------------------------------------------------------------------
+
+    # ..........................................................................
+    def add_irises(self, *irises):
+        """
+        Add several iris objects to the current project.
+
+        Parameters
+        ----------
+        *irises : series of |IRIS|
+            IRIS objects to add to the current project.
+            The name of the entries in the project will be identical to the
+            names of the datasets.
+
+        See Also
+        --------
+        add_iris : Add a single iris objects to the current project.
+
+        Examples
+        --------
+
+        # todo
+        """
+        for iris in irises:
+            self.add_iris(iris)
+
+    # ..........................................................................
+    def add_iris(self, iris, name=None):
+        """
+        Add a single iris object to the current project.
+
+        Parameters
+        ----------
+        iris : |IRIS|
+            IRIS object to add.
+            The name of the entry will be the name of the iris, except
+            if parameter `name` is defined.
+        name : str, optional
+            If provided the name will be used to name the entry in the project.
+
+        See Also
+        --------
+        add_irises : Add several IRIS obejcts to the current project.
+
+        Examples
+        --------
+
+        >>> ds1 = scp.NDDataset([1, 2, 3])
+        >>> proj = scp.Project()
+        >>> proj.add_dataset(ds1, name='Toto')
+        """
+
+        iris.parent = self
+        if name is None:
+            name = iris.name
+
+        n = 1
+        while name in self.allnames:
+            # this name already exists
+            name = f"{iris.name}-{n}"
+            n += 1
+
+        iris.name = name
+        self._irises[name] = iris
+
+    # ..........................................................................
+    def remove_iris(self, name):
+        """
+        Remove a dataset from the project.
+
+        Parameters
+        ----------
+        name : str
+            Name of the dataset to remove.
+        """
+        self._irises[name]._parent = None  # remove the parent info
+        del self._irises[name]  # remove the object from the list of iris objects
+
+    # ..........................................................................
+    def remove_all_iris(self):
+        """
+        Remove all dataset from the project.
+        """
+        for v in self._irises.values():
+            v._parent = None
+        self._irises = {}
 
     # ------------------------------------------------------------------------
     # project items
