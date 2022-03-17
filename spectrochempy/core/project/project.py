@@ -258,6 +258,13 @@ class Project(AbstractProject, NDIO):
             "scripts",
         ]
 
+    def __contains__(self, item):
+        if isinstance(item, str):
+            if item in self.allnames:
+                return True
+            else:
+                return any([item in project for project in self.projects])
+
     def __copy__(self):
         new = Project()
         # new.name = self.name + '*'
