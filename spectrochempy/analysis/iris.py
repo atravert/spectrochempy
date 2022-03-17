@@ -22,12 +22,12 @@ from spectrochempy.core.dataset.nddataset import NDDataset
 from spectrochempy.core import info_, warning_
 
 
-def kern(K, p, q):
+def kern(K, p, q, **kwargs):
     """
     Compute kernel of Fredholm equation of the 1st kind.
 
     This function computes a kernel matrix and returns it as NDDataset. Pre-defined kernels can be chosen among:
-    {'langmuir', 'ca', 'reactant-first-order', 'product-first-order', diffusion} A custom kernel fucntion - a
+    {`langmuir`, `ca`, `reactant-first-order`, `product-first-order`, `diffusion`} A custom kernel fucntion - a
     2-variable lambda function `ker(p, q)` or a function returning a ndarray can be passed. `p` and `q` contain
     the values of an external experimental variable and an internal physico-chemical parameter, respectively.
 
@@ -39,6 +39,10 @@ def kern(K, p, q):
         External variable.
     q : Coord or ndadarray
         Internal variable.
+
+    Other parameters
+    ----------------
+    name : dataset name
 
     Returns
     -------
@@ -163,10 +167,11 @@ def kern(K, p, q):
     w[-1] = w[0]
 
     out = NDDataset(K_ * w)
+    out.name = kwargs.get("name", "kernel matrix")
     if isinstance(K, str):
-        out.name = K + " kernel matrix"
+        out.description = f"Kernel generated with {K} model"
     else:
-        out.name = "kernel matrix"
+        out.description = f"Kernel generated with {K}"
     out.dims = ["y", "x"]
     out.y = p
     out.x = q
