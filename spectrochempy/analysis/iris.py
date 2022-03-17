@@ -203,6 +203,8 @@ class IRIS:
 
     Attributes
     ----------
+    name : str
+        IRIS name
     f : NDDataset
         A 3D/2D dataset containing the solutions (one per regularization parameter).
     RSS: array of float
@@ -253,7 +255,7 @@ class IRIS:
     NDDataset: [float64] unitless (shape: (z:1, y:10, x:301))
     """
 
-    def __init__(self, X, K, p=None, q=None, reg_par=None):
+    def __init__(self, X, K, p=None, q=None, reg_par=None, name=None):
         global _log
         _log = ""
 
@@ -554,6 +556,10 @@ class IRIS:
         info_(msg)
         _log += msg
 
+        if name is None:
+            self.name = "IRIS_" + X.name
+        else:
+            self.name = name
         f = NDDataset(f)
         f.name = "2D distribution functions"
         f.title = "density"
@@ -698,6 +704,28 @@ class IRIS:
         for i in index:
             axeslist.append(self.f[i].plot(method="map", **kwargs))
         return axeslist
+
+    # ..........................................................................
+    def implements(self, name=None):
+        """
+        Utility to check if the current object implements a given class.
+
+        Rather than isinstance(obj, <class>) use object.implements('<classname>').
+        This is useful to check type without importing the module.
+
+        Parameters
+        ----------
+        name : str, optional
+            Name of the class implemented.
+
+        Examples
+        --------
+
+        """
+        if name is None:
+            return self.__class__.__name__
+        else:
+            return name == self.__class__.__name__
 
 
 # --------------------------------------------
