@@ -200,6 +200,8 @@ class IRIS:
         Internal variable. Must be provided if the kernel is passed as a str or callable.
     reg_par : None or array_like of two values `[min, max]` or three values `[start, stop, num]`
         Regularization parameter.
+    name : str or None
+        IRIS object name. If none (default), it is set to `"IRIS_" + X.name`
 
     Attributes
     ----------
