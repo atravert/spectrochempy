@@ -460,7 +460,7 @@ class Project(AbstractProject, NDIO):
     @property
     def irises_names(self):
         """
-        Names of all iris included in this project (list).
+        Names of all iris objects included in this project (list).
         """
         lst = list(self._irises.keys())
         return lst
@@ -629,7 +629,7 @@ class Project(AbstractProject, NDIO):
         *irises : series of |IRIS|
             IRIS objects to add to the current project.
             The name of the entries in the project will be identical to the
-            names of the datasets.
+            names of the iris objects.
 
         See Also
         --------
@@ -663,10 +663,7 @@ class Project(AbstractProject, NDIO):
 
         Examples
         --------
-
-        >>> ds1 = scp.NDDataset([1, 2, 3])
-        >>> proj = scp.Project()
-        >>> proj.add_dataset(ds1, name='Toto')
+        todo
         """
 
         iris.parent = self
@@ -690,7 +687,7 @@ class Project(AbstractProject, NDIO):
         Parameters
         ----------
         name : str
-            Name of the dataset to remove.
+            Name of the iris object to remove.
         """
         self._irises[name]._parent = None  # remove the parent info
         del self._irises[name]  # remove the object from the list of iris objects
@@ -698,7 +695,7 @@ class Project(AbstractProject, NDIO):
     # ..........................................................................
     def remove_all_iris(self):
         """
-        Remove all dataset from the project.
+        Remove all iris objects from the project.
         """
         for v in self._irises.values():
             v._parent = None
