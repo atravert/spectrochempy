@@ -257,323 +257,355 @@ class IRIS:
     NDDataset: [float64] unitless (shape: (z:1, y:10, x:301))
     """
 
-    def __init__(self, X, K, p=None, q=None, reg_par=None, name=None):
+    def __init__(self, X=None, K=None, p=None, q=None, reg_par=None, name=None):
         global _log
         _log = ""
 
-        # check if x dimension exists
-        if "x" in X.dims:
-            # if multiple coords for a given dimension, take the default ones:
-            channels = X.x.default
-        else:
-            # else, set a single channel:
-            channels = Coord([0])
+        if X is not None and K is not None:
 
-        if p is not None:  # supersedes the default
-            if isinstance(p, Coord):
-                if p.shape[1] != X.shape[0]:
-                    raise ValueError(
-                        "'p' should be consistent with the y coordinate of the dataset"
-                    )
+            # check if x dimension exists
+            if "x" in X.dims:
+                # if multiple coords for a given dimension, take the default ones:
+                channels = X.x.default
             else:
-                if len(p) != X.shape[0]:
+                # else, set a single channel:
+                channels = Coord([0])
+
+            if p is not None:  # supersedes the default
+                if isinstance(p, Coord):
+                    if p.shape[1] != X.shape[0]:
+                        raise ValueError(
+                            "'p' should be consistent with the y coordinate of the dataset"
+                        )
+                else:
+                    if len(p) != X.shape[0]:
+                        raise ValueError(
+                            "'p' should be consistent with the y coordinate of the dataset"
+                        )
+                    p = Coord(p, title="External variable")
+            else:
+                p = X.y.default
+
+            # check options
+            # defines the kernel
+
+            if isinstance(K, NDDataset) and q is None:
+                q = K.x
+            elif isinstance(K, str) or callable(K):
+                if isinstance(q, Coord):
+                    pass
+                elif isinstance(q, Iterable):
+                    if len(q) == 3:
+                        q = np.linspace(q[0], q[1], q[2])
+                else:
                     raise ValueError(
-                        "'p' should be consistent with the y coordinate of the dataset"
+                        "q must be provided as a Coord, a NDarray or an iterable of 3 items"
                     )
-                p = Coord(p, title="External variable")
-        else:
-            p = X.y.default
 
-        # check options
-        # defines the kernel
+                msg = f"Build kernel matrix with: {K}\n"
+                info_(msg)
+                _log += msg
+                K = kern(K, p, q)
+                q = K.x  # q is now a Coord
 
-        if isinstance(K, NDDataset) and q is None:
-            q = K.x
-        elif isinstance(K, str) or callable(K):
-            if isinstance(q, Coord):
-                pass
-            elif isinstance(q, Iterable):
-                if len(q) == 3:
-                    q = np.linspace(q[0], q[1], q[2])
+            # defines regularization parameter values
+
+            if reg_par is None:
+                regularization = False
+                search_reg = False
+                reg_par = [0]
+            elif len(reg_par) == 2:
+                regularization = True
+                search_reg = True
+            elif len(reg_par) == 3:
+                regularization = True
+                search_reg = False
+                reg_par = np.logspace(reg_par[0], reg_par[1], reg_par[2])
             else:
                 raise ValueError(
-                    "q must be provided as a Coord, a NDarray or an iterable of 3 items"
+                    "reg_par should be either None or a set of 2 or 3 integers"
                 )
 
-            msg = f"Build kernel matrix with: {K}\n"
+            # define containers for outputs
+            if not regularization:
+                f = np.zeros((1, len(q), len(channels.data)))
+                RSS = np.zeros((1))
+                SM = np.zeros((1))
+
+            if regularization and not search_reg:
+                f = np.zeros((len(reg_par), len(q), len(channels.data)))
+                RSS = np.zeros((len(reg_par)))
+                SM = np.zeros((len(reg_par)))
+
+            if regularization and search_reg:
+                f = np.zeros((4, len(q), len(channels.data)))
+                RSS = np.zeros((4))
+                SM = np.zeros((4))
+
+            # Define S matrix (sharpness), see function _Smat() below
+            msg = "Build S matrix (sharpness)\n"
             info_(msg)
             _log += msg
-            K = kern(K, p, q)
-            q = K.x  # q is now a Coord
-
-        # defines regularization parameter values
-
-        if reg_par is None:
-            regularization = False
-            search_reg = False
-            reg_par = [0]
-        elif len(reg_par) == 2:
-            regularization = True
-            search_reg = True
-        elif len(reg_par) == 3:
-            regularization = True
-            search_reg = False
-            reg_par = np.logspace(reg_par[0], reg_par[1], reg_par[2])
-        else:
-            raise ValueError(
-                "reg_par should be either None or a set of 2 or 3 integers"
-            )
-
-        # define containers for outputs
-        if not regularization:
-            f = np.zeros((1, len(q), len(channels.data)))
-            RSS = np.zeros((1))
-            SM = np.zeros((1))
-
-        if regularization and not search_reg:
-            f = np.zeros((len(reg_par), len(q), len(channels.data)))
-            RSS = np.zeros((len(reg_par)))
-            SM = np.zeros((len(reg_par)))
-
-        if regularization and search_reg:
-            f = np.zeros((4, len(q), len(channels.data)))
-            RSS = np.zeros((4))
-            SM = np.zeros((4))
-
-        # Define S matrix (sharpness), see function _Smat() below
-        msg = "Build S matrix (sharpness)\n"
-        info_(msg)
-        _log += msg
-        S = _Smat(q)
-        msg = "... done\n"
-        info_(msg)
-        _log += msg
-
-        # Solve unregularized problem
-        if not regularization:
-            msg = "Solving for {} channels and {} observations, no regularization\n".format(
-                X.shape[1], X.shape[0]
-            )
-            _log += msg
+            S = _Smat(q)
+            msg = "... done\n"
             info_(msg)
-
-            # use scipy.nnls() to solve the linear problem: X = K f
-            for j, _ in enumerate(channels.data):
-                f[0, :, j] = optimize.nnls(K.data, X[:, j].data.squeeze())[0]
-            res = X.data - np.dot(K.data, f[0].data)
-            RSS[0] = np.sum(res ** 2)
-            SM[0] = np.linalg.norm(np.dot(np.dot(np.transpose(f[0]), S), f[0]))
-
-            msg = "-->  residuals = {:.2e}    curvature = {:.2e}".format(RSS[0], SM[0])
             _log += msg
-            info_(msg)
 
-        else:  # regularization
-            # some matrices used for QP optimization do not depend on lambdaR
-            # and are computed here. The standard form used by quadprog() is
-            # minimize (1/2) xT G x - aT x ; subject to: C.T x >= b
+            # Solve unregularized problem
+            if not regularization:
+                msg = "Solving for {} channels and {} observations, no regularization\n".format(
+                    X.shape[1], X.shape[0]
+                )
+                _log += msg
+                info_(msg)
 
-            # The first part of the G matrix is independent of lambda:  G = G0 + 2 * lambdaR S
-            G0 = 2 * np.dot(K.data.T, K.data)
-            a = 2 * np.dot(X.data.T, K.data)
-            C = np.eye(len(q))
-            b = np.zeros(len(q))
+                # use scipy.nnls() to solve the linear problem: X = K f
+                for j, _ in enumerate(channels.data):
+                    f[0, :, j] = optimize.nnls(K.data, X[:, j].data.squeeze())[0]
+                res = X.data - np.dot(K.data, f[0].data)
+                RSS[0] = np.sum(res ** 2)
+                SM[0] = np.linalg.norm(np.dot(np.dot(np.transpose(f[0]), S), f[0]))
 
-            def solve_for_reg_par(X, K, G0, reg_par, S):
-                """
-                QP optimization
+                msg = "-->  residuals = {:.2e}    curvature = {:.2e}".format(
+                    RSS[0], SM[0]
+                )
+                _log += msg
+                info_(msg)
 
-                parameters:
-                -----------
-                X: NDDataset of experimental spectra
-                K: NDDataset, kernel datase
-                G0: the lambda independent part of G
-                reg_par: regularization parameter
-                S: penalty function (shaprness)
-                verbose: print info
+            else:  # regularization
+                # some matrices used for QP optimization do not depend on lambdaR
+                # and are computed here. The standard form used by quadprog() is
+                # minimize (1/2) xT G x - aT x ; subject to: C.T x >= b
 
-                returns:
-                --------
-                f, RSS and SM for a given regularization parameter
-                """
-                global _log
+                # The first part of the G matrix is independent of lambda:  G = G0 + 2 * lambdaR S
+                G0 = 2 * np.dot(K.data.T, K.data)
+                a = 2 * np.dot(X.data.T, K.data)
+                C = np.eye(len(q))
+                b = np.zeros(len(q))
 
-                fi = np.zeros((len(q), len(channels.data)))
+                def solve_for_reg_par(X, K, G0, reg_par, S):
+                    """
+                    QP optimization
 
-                for j, channel in enumerate(channels.data):
-                    try:
-                        G = G0 + 2 * reg_par * S
-                        fi[:, j] = quadprog.solve_qp(G, a[j].squeeze(), C, b)[0]
-                    except ValueError:  # pragma: no cover
-                        msg = f"Warning:G is not positive definite for log10(lambda)={np.log10(reg_par):.2f} at {channel:.2f} {channels.units}, find nearest PD matrix"
-                        warning_(msg)
-                        _log += msg
+                    parameters:
+                    -----------
+                    X: NDDataset of experimental spectra
+                    K: NDDataset, kernel datase
+                    G0: the lambda independent part of G
+                    reg_par: regularization parameter
+                    S: penalty function (shaprness)
+                    verbose: print info
+
+                    returns:
+                    --------
+                    f, RSS and SM for a given regularization parameter
+                    """
+                    global _log
+
+                    fi = np.zeros((len(q), len(channels.data)))
+
+                    for j, channel in enumerate(channels.data):
                         try:
-                            G = _nearestPD(G0 + 2 * reg_par * S, 0)
+                            G = G0 + 2 * reg_par * S
                             fi[:, j] = quadprog.solve_qp(G, a[j].squeeze(), C, b)[0]
-                        except ValueError:
-                            msg = (
-                                "... G matrix is still ill-conditioned, "
-                                "try with a small shift of diagonal elements..."
-                            )
+                        except ValueError:  # pragma: no cover
+                            msg = f"Warning:G is not positive definite for log10(lambda)={np.log10(reg_par):.2f} at {channel:.2f} {channels.units}, find nearest PD matrix"
                             warning_(msg)
                             _log += msg
-                            G = _nearestPD(G0 + 2 * reg_par * S, 1e-3)
-                            fi[:, j] = quadprog.solve_qp(G, a[j].squeeze(), C, b)[0]
+                            try:
+                                G = _nearestPD(G0 + 2 * reg_par * S, 0)
+                                fi[:, j] = quadprog.solve_qp(G, a[j].squeeze(), C, b)[0]
+                            except ValueError:
+                                msg = (
+                                    "... G matrix is still ill-conditioned, "
+                                    "try with a small shift of diagonal elements..."
+                                )
+                                warning_(msg)
+                                _log += msg
+                                G = _nearestPD(G0 + 2 * reg_par * S, 1e-3)
+                                fi[:, j] = quadprog.solve_qp(G, a[j].squeeze(), C, b)[0]
 
-                resi = X.data - np.dot(K.data, fi)
-                RSSi = np.sum(resi ** 2)
-                SMi = np.linalg.norm(np.dot(np.dot(np.transpose(fi), S), fi))
+                    resi = X.data - np.dot(K.data, fi)
+                    RSSi = np.sum(resi ** 2)
+                    SMi = np.linalg.norm(np.dot(np.dot(np.transpose(fi), S), fi))
 
-                msg = (
-                    f"log10(lambda)={np.log10(reg_par):.3f} -->  residuals = {RSSi:.3e}    "
-                    f"regularization constraint  = {SMi:.3e}\n"
-                )
-                info_(msg)
-                _log += msg
-
-                return fi, RSSi, SMi
-
-            if not search_reg:
-                msg = (
-                    f"Solving for {X.shape[1]} channels, {X.shape[0]} observations and "
-                    f"{len(reg_par)} regularization parameters \n"
-                )
-                info_(msg)
-                _log += msg
-
-                for i, lamda_ in enumerate(reg_par):
-                    f[i], RSS[i], SM[i] = solve_for_reg_par(X, K, G0, lamda_, S)
-
-            else:
-                msg = (
-                    f"Solving for {X.shape[1]} channel(s) and {X.shape[0]} observations, search "
-                    f"optimum regularization parameter in the range: [10**{min(reg_par)}, 10**{max(reg_par)}]\n"
-                )
-                info_(msg)
-                _log += msg
-
-                x = np.zeros(4)
-                epsilon = 0.1
-                phi = (1 + np.sqrt(5)) / 2
-
-                x[0] = min(reg_par)
-                x[3] = max(reg_par)
-                x[1] = (x[3] + phi * x[0]) / (1 + phi)
-                x[2] = x[0] + x[3] - x[1]
-                reg_par = 10 ** x
-                msg = "Initial Log(lambda) values = " + str(x)
-                info_(msg)
-                _log += msg
-
-                for i, xi in enumerate(x):
-                    f[i], RSS[i], SM[i] = solve_for_reg_par(X, K, G0, 10 ** xi, S)
-
-                Rx = np.copy(RSS)
-                Sy = np.copy(SM)
-                while "convergence not reached":
-                    C1 = _menger(np.log10(Rx[0:3]), np.log10(Sy[0:3]))
-                    C2 = _menger(np.log10(Rx[1:4]), np.log10(Sy[1:4]))
-                    msg = f"Curvatures of the inner points: C1 = {C1:.3f} ; C2 = {C2:.3f} \n"
+                    msg = (
+                        f"log10(lambda)={np.log10(reg_par):.3f} -->  residuals = {RSSi:.3e}    "
+                        f"regularization constraint  = {SMi:.3e}\n"
+                    )
                     info_(msg)
                     _log += msg
 
+                    return fi, RSSi, SMi
+
+                if not search_reg:
+                    msg = (
+                        f"Solving for {X.shape[1]} channels, {X.shape[0]} observations and "
+                        f"{len(reg_par)} regularization parameters \n"
+                    )
+                    info_(msg)
+                    _log += msg
+
+                    for i, lamda_ in enumerate(reg_par):
+                        f[i], RSS[i], SM[i] = solve_for_reg_par(X, K, G0, lamda_, S)
+
+                else:
+                    msg = (
+                        f"Solving for {X.shape[1]} channel(s) and {X.shape[0]} observations, search "
+                        f"optimum regularization parameter in the range: [10**{min(reg_par)}, 10**{max(reg_par)}]\n"
+                    )
+                    info_(msg)
+                    _log += msg
+
+                    x = np.zeros(4)
+                    epsilon = 0.1
+                    phi = (1 + np.sqrt(5)) / 2
+
+                    x[0] = min(reg_par)
+                    x[3] = max(reg_par)
+                    x[1] = (x[3] + phi * x[0]) / (1 + phi)
+                    x[2] = x[0] + x[3] - x[1]
+                    reg_par = 10 ** x
+                    msg = "Initial Log(lambda) values = " + str(x)
+                    info_(msg)
+                    _log += msg
+
+                    for i, xi in enumerate(x):
+                        f[i], RSS[i], SM[i] = solve_for_reg_par(X, K, G0, 10 ** xi, S)
+
+                    Rx = np.copy(RSS)
+                    Sy = np.copy(SM)
                     while "convergence not reached":
-                        x[3] = x[2]
-                        Rx[3] = Rx[2]
-                        Sy[3] = Sy[2]
-                        x[2] = x[1]
-                        Rx[2] = Rx[1]
-                        Sy[2] = Sy[1]
-                        x[1] = (x[3] + phi * x[0]) / (1 + phi)
-                        msg = "New range of Log(lambda) values: " + str(x)
-                        info_(msg)
-                        _log += msg
-
-                        f_, Rx[1], Sy[1] = solve_for_reg_par(X, K, G0, 10 ** x[1], S)
-                        reg_par = np.append(reg_par, np.array(10 ** x[1]))
-                        f = np.concatenate((f, np.atleast_3d(f_.T).T))
-                        RSS = np.concatenate((RSS, np.array(Rx[1:2])))
-                        SM = np.concatenate((SM, np.array(Sy[1:2])))
+                        C1 = _menger(np.log10(Rx[0:3]), np.log10(Sy[0:3]))
                         C2 = _menger(np.log10(Rx[1:4]), np.log10(Sy[1:4]))
-                        msg = f"new curvature: C2 = {C2:.3f}"
+                        msg = f"Curvatures of the inner points: C1 = {C1:.3f} ; C2 = {C2:.3f} \n"
                         info_(msg)
                         _log += msg
 
-                        if C2 > 0:
+                        while "convergence not reached":
+                            x[3] = x[2]
+                            Rx[3] = Rx[2]
+                            Sy[3] = Sy[2]
+                            x[2] = x[1]
+                            Rx[2] = Rx[1]
+                            Sy[2] = Sy[1]
+                            x[1] = (x[3] + phi * x[0]) / (1 + phi)
+                            msg = "New range of Log(lambda) values: " + str(x)
+                            info_(msg)
+                            _log += msg
+
+                            f_, Rx[1], Sy[1] = solve_for_reg_par(
+                                X, K, G0, 10 ** x[1], S
+                            )
+                            reg_par = np.append(reg_par, np.array(10 ** x[1]))
+                            f = np.concatenate((f, np.atleast_3d(f_.T).T))
+                            RSS = np.concatenate((RSS, np.array(Rx[1:2])))
+                            SM = np.concatenate((SM, np.array(Sy[1:2])))
+                            C2 = _menger(np.log10(Rx[1:4]), np.log10(Sy[1:4]))
+                            msg = f"new curvature: C2 = {C2:.3f}"
+                            info_(msg)
+                            _log += msg
+
+                            if C2 > 0:
+                                break
+
+                        if C1 > C2:
+                            x_ = x[1]
+                            C_ = C1
+                            x[3] = x[2]
+                            Rx[3] = Rx[2]
+                            Sy[3] = Sy[2]
+                            x[2] = x[1]
+                            Rx[2] = Rx[1]
+                            Sy[2] = Sy[1]
+                            x[1] = (x[3] + phi * x[0]) / (1 + phi)
+                            msg = "New range (Log lambda): " + str(x)
+                            info_(msg)
+                            _log += msg
+                            f_, Rx[1], Sy[1] = solve_for_reg_par(
+                                X, K, G0, 10 ** x[1], S
+                            )
+                            f = np.concatenate((f, np.atleast_3d(f_.T).T))
+                            reg_par = np.append(reg_par, np.array(10 ** x[1]))
+                            RSS = np.concatenate((RSS, np.array(Rx[1:2])))
+                            SM = np.concatenate((SM, np.array(Sy[1:2])))
+                        else:
+                            x_ = x[2]
+                            C_ = C2
+                            x[0] = x[1]
+                            Rx[0] = Rx[1]
+                            Sy[0] = Sy[1]
+                            x[1] = x[2]
+                            Rx[1] = Rx[2]
+                            Sy[1] = Sy[2]
+                            x[2] = x[0] - (x[1] - x[3])
+                            msg = "New range (Log lambda):" + str(x)
+                            info_(msg)
+                            _log += msg
+                            f_, Rx[2], Sy[2] = solve_for_reg_par(
+                                X, K, G0, 10 ** x[2], S
+                            )
+                            f = np.concatenate((f, np.atleast_3d(f_.T).T))
+                            reg_par = np.append(reg_par, np.array(10 ** x[2]))
+                            RSS = np.concatenate((RSS, np.array(Rx[1:2])))
+                            SM = np.concatenate((SM, np.array(Sy[1:2])))
+                        if (10 ** x[3] - 10 ** x[0]) / 10 ** x[3] < epsilon:
                             break
+                    id_opt = np.argmin(np.abs(reg_par - np.power(10, x_)))
+                    id_opt_ranked = np.argmin(np.abs(np.argsort(reg_par) - id_opt))
+                    msg = f"\n optimum found: index = {id_opt_ranked} ; Log(lambda) = {x_:.3f} ; lambda = {np.power(10, x_):.5e} ; curvature = {C_:.3f}"
+                    info_(msg)
+                    _log += msg
 
-                    if C1 > C2:
-                        x_ = x[1]
-                        C_ = C1
-                        x[3] = x[2]
-                        Rx[3] = Rx[2]
-                        Sy[3] = Sy[2]
-                        x[2] = x[1]
-                        Rx[2] = Rx[1]
-                        Sy[2] = Sy[1]
-                        x[1] = (x[3] + phi * x[0]) / (1 + phi)
-                        msg = "New range (Log lambda): " + str(x)
-                        info_(msg)
-                        _log += msg
-                        f_, Rx[1], Sy[1] = solve_for_reg_par(X, K, G0, 10 ** x[1], S)
-                        f = np.concatenate((f, np.atleast_3d(f_.T).T))
-                        reg_par = np.append(reg_par, np.array(10 ** x[1]))
-                        RSS = np.concatenate((RSS, np.array(Rx[1:2])))
-                        SM = np.concatenate((SM, np.array(Sy[1:2])))
-                    else:
-                        x_ = x[2]
-                        C_ = C2
-                        x[0] = x[1]
-                        Rx[0] = Rx[1]
-                        Sy[0] = Sy[1]
-                        x[1] = x[2]
-                        Rx[1] = Rx[2]
-                        Sy[1] = Sy[2]
-                        x[2] = x[0] - (x[1] - x[3])
-                        msg = "New range (Log lambda):" + str(x)
-                        info_(msg)
-                        _log += msg
-                        f_, Rx[2], Sy[2] = solve_for_reg_par(X, K, G0, 10 ** x[2], S)
-                        f = np.concatenate((f, np.atleast_3d(f_.T).T))
-                        reg_par = np.append(reg_par, np.array(10 ** x[2]))
-                        RSS = np.concatenate((RSS, np.array(Rx[1:2])))
-                        SM = np.concatenate((SM, np.array(Sy[1:2])))
-                    if (10 ** x[3] - 10 ** x[0]) / 10 ** x[3] < epsilon:
-                        break
-                id_opt = np.argmin(np.abs(reg_par - np.power(10, x_)))
-                id_opt_ranked = np.argmin(np.abs(np.argsort(reg_par) - id_opt))
-                msg = f"\n optimum found: index = {id_opt_ranked} ; Log(lambda) = {x_:.3f} ; lambda = {np.power(10, x_):.5e} ; curvature = {C_:.3f}"
-                info_(msg)
-                _log += msg
+                # sort by lamba values
+                argsort = np.argsort(reg_par)
+                reg_par = reg_par[argsort]
+                RSS = RSS[argsort]
+                SM = SM[argsort]
+                f = f[argsort]
 
-            # sort by lamba values
-            argsort = np.argsort(reg_par)
-            reg_par = reg_par[argsort]
-            RSS = RSS[argsort]
-            SM = SM[argsort]
-            f = f[argsort]
+            msg = "\n Done."
+            info_(msg)
+            _log += msg
 
-        msg = "\n Done."
-        info_(msg)
-        _log += msg
+            if name is None:
+                self.name = "IRIS_" + X.name
+            else:
+                self.name = name
+            f = NDDataset(f)
+            f.name = "2D distribution functions"
+            f.title = "density"
+            f.history = "2D IRIS analysis of {} dataset".format(X.name)
+            f.set_coordset(
+                z=Coord(data=reg_par, title="lambda"), y=q.copy(), x=channels
+            )
+            self.f = f
+            self.K = K
+            self.X = X
+            self.reg_par = reg_par
+            self.RSS = RSS
+            self.SM = SM
+            self.log = _log
 
-        if name is None:
-            self.name = "IRIS_" + X.name
-        else:
-            self.name = name
-        f = NDDataset(f)
-        f.name = "2D distribution functions"
-        f.title = "density"
-        f.history = "2D IRIS analysis of {} dataset".format(X.name)
-        f.set_coordset(z=Coord(data=reg_par, title="lambda"), y=q.copy(), x=channels)
-        self.f = f
-        self.K = K
-        self.X = X
-        self.reg_par = reg_par
-        self.RSS = RSS
-        self.SM = SM
-        self.log = _log
+        else:  # X or K is None
+            self.name = ""
+            self.f = NDDataset()
+            self.K = K
+            self.X = X
+            self.reg_par = None
+            self.RSS = None
+            self.SM = None
+            self.log = None
+
+    def __dir__(self):
+        # remove some methods with respect to the full NDArray
+        return ["name", "f", "K", "X", "reg_par", "RSS", "SM", "log"]
+
+    def __eq__(self, other):
+        # comparison based on the distribution functions
+        if self.f == other.f:
+            return True
+        return False
 
     def reconstruct(self):
         """
