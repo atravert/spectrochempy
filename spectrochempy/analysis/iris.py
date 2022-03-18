@@ -589,7 +589,7 @@ class IRIS:
 
         else:  # X or K is None
             self.name = ""
-            self.f = NDDataset()
+            self.f = None
             self.K = K
             self.X = X
             self.reg_par = None

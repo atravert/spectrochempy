@@ -379,13 +379,16 @@ class NDIO(HasTraits):
                         obj._references = val["references"]
 
                     elif key in ["_datasets"]:
-                        # datasets = [item_to_attr(NDDataset(name=k),
-                        # v) for k, v in val.items()]
                         datasets = [item_to_attr(NDDataset(), js) for js in val]
                         obj.datasets = datasets
 
                     elif key in ["_irises"]:
                         irises = [item_to_attr(IRIS(), js) for js in val]
+                        # iris f, K, X appear as dicts, we convert them
+                        # back to datasets:
+                        for key, val in irises[0].__dict__.items():
+                            if key in ["f", "K", "X"]:
+                                setattr(irises[0], key, item_to_attr(NDDataset(), val))
                         obj.irises = irises
 
                     elif key in ["_projects"]:
