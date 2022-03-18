@@ -486,7 +486,12 @@ class Project(AbstractProject, NDIO):
         """
         Names of all objects contained in this project (list).
         """
-        return self.datasets_names + self.projects_names + self.scripts_names
+        return (
+            self.datasets_names
+            + self.irises_names
+            + self.projects_names
+            + self.scripts_names
+        )
 
     @property
     def allitems(self):
