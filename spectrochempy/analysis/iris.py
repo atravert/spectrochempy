@@ -182,7 +182,7 @@ def kern(K, p, q, **kwargs):
 
 class IRIS:
     """
-    Integral inversion solver for spectroscopic data.
+    InveRsion of Integral equations for Spectroscopic data.
 
     Solves integral equations of the first kind of 1 or 2 dimensions, i.e. returns a
     distribution f of contributions to 1D ou 2D datasets.

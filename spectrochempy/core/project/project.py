@@ -7,33 +7,51 @@
 
 __all__ = ["Project"]
 
-from copy import deepcopy as cpy
-import uuid
-import pathlib
-from functools import wraps
-
-import dill
-from traitlets import Dict, Instance, Unicode, This, default
-
-from spectrochempy.core.dataset.nddataset import NDDataset, NDIO
-from spectrochempy.analysis.iris import IRIS
-from spectrochempy.core.scripts.script import Script
-from spectrochempy.core.dataset.meta import Meta
-from spectrochempy.core.project.baseproject import AbstractProject
+import datetime
+from spectrochempy.core.dataset.nddataset import NDIO
 
 
-# from collections import OrderedDict
-
-# cfg = config_manager
-# preferences = preferences
-
-
-# ======================================================================================================================
-# Project class
-# ======================================================================================================================
-class Project(AbstractProject, NDIO):
+class Projectable:
     """
-    A manager for projects, datasets and scripts.
+    Makes an object projectable
+
+    add the name or date attibutes to an object so that it can be added to a Project.
+
+    Parameters
+    ----------
+        obj
+            the original object
+
+    Attributes
+        name
+            str
+            the name of the object
+        obj: object
+            the original object
+        date: datetime
+            the date of the object
+
+    >>> a = 'hello'
+    >>> a = Projectable(a)
+    """
+
+    def __init__(self, obj):
+
+        self.obj = obj
+        if hasattr(obj, "name"):
+            self.name = obj.name
+        else:
+            self.name = _class_str(obj)
+
+        if not hasattr(obj, "date"):
+            self.date = datetime.datetime.now()
+        else:
+            self.date = obj.date
+
+
+class Project(NDIO):
+    """
+    A manager for spectrochempy objects datasets and scripts.
 
     It can handle multiple datasets, sub-projects, and scripts in a main
     project.
@@ -41,238 +59,68 @@ class Project(AbstractProject, NDIO):
     Parameters
     ----------
     *args : Series of objects, optional
-        Argument type will be interpreted correctly if they are of type
-        |NDDataset|, |Project|, or other objects such as |Script|.
+        Argument type will be interpreted
         This is optional, as they can be added later.
     argnames : list, optional
         If not None, this list gives the names associated to each
         objects passed as args. It MUST be the same length that the
         number of args, or an error will be raised.
-        If None, the internal name of each object will be used instead.
     name : str, optional
-        The name of the project.  If the name is not provided, it will be
-        generated automatically.
+        The name of the project.
+    description: str, optional
+        The description of the project
     **meta : dict
         Any other attributes to described the project.
+
+    Attributes
+    ----------
+    name : str
+        Name of the dataset
+    names : list of str
+        List of names of the entries of the project
+    all_names  : list of str
+        List of all names of the entries, including those in subprojects
+    objects: dict
+        Dict of the objects of the project
+    all_objects: dict
+        Dict of all objects, including those in subprojects
+    projects:
+        List of projects included
+    Dict of the (sub)projects of the project
+    all_projects",
 
     See Also
     --------
     NDDataset : The main object containing arrays.
     Script : Executables scripts container.
 
-    Examples
-    --------
-
-    >>> myproj = scp.Project(name='project_1')
-    >>> ds = scp.NDDataset([1., 2., 3.], name='dataset_1')
-    >>> myproj.add_dataset(ds)
-    >>> print(myproj)
-    Project project_1:
-        ⤷ dataset_1 (dataset)
     """
 
-    _id = Unicode()
-    _name = Unicode(allow_none=True)
-
-    _parent = This()
-    _projects = Dict(This)
-    _datasets = Dict(Instance(NDDataset))
-    _irises = Dict(Instance(IRIS))
-    _scripts = Dict(Instance(Script))
-    _others = Dict()
-    _meta = Instance(Meta)
-
-    _filename = Instance(pathlib.Path, allow_none=True)
-    _directory = Instance(pathlib.Path, allow_none=True)
-
-    # ..........................................................................
-    def __init__(self, *args, argnames=None, name=None, **meta):
+    def __init__(self, *objs, objnames=None, name=None, description=None):
 
         super().__init__()
 
         self.parent = None
-        self.name = name
 
-        if meta:
-            self.meta.update(meta)
-
-        for i, obj in enumerate(args):
-            name = None
-            if argnames:
-                name = argnames[i]
-            self._set_from_type(obj, name)
-
-    # ------------------------------------------------------------------------
-    # Private methods
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def _set_from_type(self, obj, name=None):
-
-        if isinstance(obj, NDDataset):
-            # add it to the _datasets dictionary
-            self.add_dataset(obj, name)
-
-        elif isinstance(obj, type(self)):  # can not use Project here!
-            self.add_project(obj, name)
-
-        elif isinstance(obj, IRIS):
-            self.add_iris(obj, name)
-
-        elif isinstance(obj, Script):
-            self.add_script(obj, name)
-
-        elif hasattr(obj, "name"):
-            self._others[obj.name] = obj
-
+        if name is not None:
+            self.name = name
         else:
-            raise ValueError(
-                "objects of type {} has no name and so "
-                "cannot be appended to the project ".format(type(obj).__name__)
-            )
+            self.name = "project"
 
-    # ..........................................................................
-    def _get_from_type(self, name):
-        pass  # TODO: ???
+        self.description = description
 
-    # ..........................................................................
-    def _repr_html_(self):
+        self.objects = {}
 
-        h = self.__str__()
-        h = h.replace("\n", "<br/>\n")
-        h = h.replace(" ", "&nbsp;")
-
-        return h
+        for i, object in enumerate(objs):
+            if objnames is not None:
+                name = objnames[i]
+            else:
+                name = None
+            self.add(object, name=name)
 
     # ------------------------------------------------------------------------
     # Special methods
     # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def __getitem__(self, key):
-
-        if not isinstance(key, str):
-            raise KeyError("The key must be a string.")
-
-        if key == "No project":
-            return
-
-        if "/" in key:
-            # Case of composed name (we assume not more than one level subproject
-            parent = key.split("/")[0]
-            if parent in self.projects_names:
-                if key in self._projects[parent].datasets_names:
-                    return self._projects[parent]._datasets[key]
-                if key in self._projects[parent].irises_names:
-                    return self._projects[parent]._irises[key]
-                elif key in self._projects[parent].scripts_names:
-                    return self._projects[parent]._scripts[key]
-        if key in self.datasets_names:
-            return self._datasets[key]
-        elif key in self.irises_names:
-            return self._irises[key]
-        elif key in self.projects_names:
-            return self._projects[key]
-        elif key in self.scripts_names:
-            return self._scripts[key]
-        else:
-            raise KeyError(f"{key}: This object name does not exist in this project.")
-
-    # ..........................................................................
-    def __setitem__(self, key, value):
-
-        if not isinstance(key, str):
-            raise KeyError("The key must be a string.")
-
-        if key in self.allnames and not isinstance(value, type(self[key])):
-            raise ValueError(
-                "the key exists but for a different type "
-                "of object: {}".format(type(self[key]).__name__)
-            )
-
-        if key in self.datasets_names:
-            value.parent = self
-            self._datasets[key] = value
-        elif key in self.irises_names:
-            value.parent = self
-            self._irises[key] = value
-        elif key in self.projects_names:
-            value.parent = self
-            self._projects[key] = value
-        elif key in self.scripts_names:
-            value.parent = self
-            self._scripts[key] = value
-        else:
-            # the key does not exists
-            self._set_from_type(value, name=key)
-
-    # ..........................................................................
-    def __getattr__(self, item):
-
-        if "_validate" in item or "_changed" in item:
-            # this avoid infinite recursion due to the traits management
-            return super().__getattribute__(item)
-
-        elif item in self.allnames:
-            # allows to access project, dataset or script by attribute
-            return self[item]
-
-        elif item in self.meta.keys():
-            # return the attribute
-            return self.meta[item]
-
-        else:
-            raise AttributeError(
-                "`%s` has no attribute `%s`" % (type(self).__name__, item)
-            )
-
-    # ..........................................................................
-    def __iter__(self):
-        for items in self.allitems:
-            yield items
-
-    # ..........................................................................
-    def __str__(self):
-
-        s = "Project {}:\n".format(self.name)
-
-        lens = len(s)
-
-        def _listproj(s, project, ns):
-            ns += 1
-            sep = "   " * ns
-
-            for k, v in project._projects.items():
-                s += "{} ⤷ {} (sub-project)\n".format(sep, k)
-                s = _listproj(s, v, ns)  # recursive call
-
-            for k, v in project._datasets.items():
-                s += "{} ⤷ {} (dataset)\n".format(sep, k)
-
-            for k, v in project._irises.items():
-                s += "{} ⤷ {} (iris)\n".format(sep, k)
-
-            for k, v in project._scripts.items():
-                s += "{} ⤷ {} (script)\n".format(sep, k)
-
-            if len(s) == lens:
-                # nothing has been found in the project
-                s += "{} (empty project)\n".format(sep)
-
-            return s.strip("\n")
-
-        return _listproj(s, self, 0)
-
-    def __dir__(self):
-        return [
-            "name",
-            "meta",
-            "parent",
-            "datasets",
-            "irises",
-            "projects",
-            "scripts",
-        ]
 
     def __contains__(self, item):
         if isinstance(item, str):
@@ -281,547 +129,185 @@ class Project(AbstractProject, NDIO):
             else:
                 return any([item in project for project in self.projects])
 
-    def __copy__(self):
-        new = Project()
-        # new.name = self.name + '*'
-        for item in self.__dir__():
-            # if item == 'name':
-            #     continue
-            item = "_" + item
-            data = getattr(self, item)
-            # if isinstance(data, (Project,NDDataset, Script)):
-            #     setattr(new, item, data.copy())
-            # elif item in ['_datasets', '_irises', '_projects', '_scripts']:
-            #
-            # else:
-            setattr(new, item, cpy(data))
-        return new
+    def __dir__(self):
+        attr = [
+            "name",
+            "description" "names",
+            "objects",
+            "projects",
+        ]
 
-    # ------------------------------------------------------------------------
-    # properties
-    # ------------------------------------------------------------------------
+        return attr
 
-    # ..........................................................................
-    @default("_id")
-    def _id_default(self):
-        # a unique id
-        return f"{type(self).__name__}_{str(uuid.uuid1()).split('-')[0]}"
+    def __getitem__(self, key):
+        if not isinstance(key, str):
+            raise KeyError("The key must be a string.")
+        return [object for name, object in self.objects.items() if name == key][0]
 
-    # ..........................................................................
-    @property
-    def id(self):
+    def __iter__(self):
+        for object in self.objects:
+            yield object
+
+    def __str__(self):
+        def str_proj_(project, level=0):
+            s = ""
+            if level > 0:
+                indent = "   " * level + "⤷ "
+            else:
+                indent = ""
+            s += f"{indent}{project.name} (Project):\n"
+            for name, obj in project.objects.items():
+                if not isinstance(obj, Project):
+                    indent = "   " * level
+                    s += f"{indent}   ⤷ {name} ({_class_str(obj)})\n"
+                else:
+                    level += 1
+                    s += str_proj_(obj, level=level)
+            return s
+
+        return str_proj_(self)
+
+    # -------------------------------------------------------
+    # public methods and attributes
+    # -------------------------------------------------------
+
+    def add(self, *objs, **kwargs):
         """
-        Readonly object identifier (str).
+        Add a object(s) to the current project.
+
+        Parameters
+        ----------
+        objs : |NDDataset|, |Project|, ...
+            The objects to add
+
+        Other parameters
+        ----------------
+        names: list of str, optional
+            If provided the names will be used to name the entries in the project.
+
+        name : str, optional
+            If provided the names will be used to name the entries in the project.
+
+        Notes
+        -----
+            If no name is provided, the name of the entry :
+            - the object.name attribute if it exists
+            - the name of the input variable
+
+        Examples
+        --------
+
+        >>> ds1 = scp.NDDataset([1, 2, 3])
+        >>> proj = scp.Project()
+        >>> proj.add(ds1, name='Toto')
         """
-        return self._id
-
-    # ..........................................................................
-    @property
-    def name(self):
         """
-        An user friendly name for the project.
+        parameters
+        ----------
+            objs: objects to add
 
-        The default is automatically generated (str).
+        other parameters
+        ----------------
+            names: list of str, optional
+                names of objects
+            name: str, optional
+                name of object
         """
-        return self._name
+        self._add_objects(*objs, **kwargs)
 
-    # ..........................................................................
-    @name.setter
-    def name(self, name):
-        # property.setter for name
-        if name is not None:
-            self._name = name
-        else:
-            self.name = "Project-" + self.id.split("-")[0]
-
-    # ..........................................................................
-    @property
-    def parent(self):
+    def remove(self, name):
         """
-        Instance of the Project which is the parent (if any) of the
-        current project (project).
+        Remove object from the  project.
+
+        Parameters
+        ----------
+        name: str
+            The name of the object to remove
+
+        Examples
+        --------
         """
-        return self._parent
-
-    # ..........................................................................
-    @parent.setter
-    def parent(self, value):
-        if self._parent is not None:
-            # A parent project already exists for this sub-project but the
-            # entered values gives a different parent. This is not allowed,
-            # as it can produce impredictable results. We will first remove it
-            # from the current project.
-            self._parent.remove_project(self.name)
-        self._parent = value
-
-    # ..........................................................................
-    @default("_parent")
-    def _get_parent(self):
-        return None
-
-    # ..........................................................................
-    @default("_meta")
-    def _meta_default(self):
-        return Meta()
-
-    # ..........................................................................
-    @property
-    def meta(self):
-        """
-        Metadata for the project (meta).
-
-        meta contains all attribute except the name,
-        id and parent of the current project.
-        """
-        return self._meta
-
-    # ..........................................................................
-    @property
-    def datasets_names(self):
-        """
-        Names of all dataset included in this project.
-        (does not return those located in sub-folders) (list).
-        """
-        lst = list(self._datasets.keys())
-        return lst
+        self.objects.pop(name)
 
     @property
-    def directory(self):
-        return self._directory
+    def names(self):
+        return [key for key in self.objects.keys()]
 
-    # ..........................................................................
-    @property
-    def datasets(self):
-        """
-        Datasets included in this project excluding those
-        located in subprojects (list).
-        """
-        d = []
-        for name in self.datasets_names:
-            d.append(self._datasets[name])
-        return d
-
-    @datasets.setter
-    def datasets(self, datasets):
-
-        self.add_datasets(*datasets)
-
-    # ..........................................................................
-    @property
-    def projects_names(self):
-        """
-        Names of all subprojects included in this project (list).
-        """
-        lst = list(self._projects.keys())
-        return lst
-
-    # ..........................................................................
     @property
     def projects(self):
-        """
-        Subprojects included in this project (list).
-        """
-        p = []
-        for name in self.projects_names:
-            p.append(self._projects[name])
-        return p
+        return {
+            {name: object}
+            for name, object in self.objects.items()
+            if isinstance(object, Project)
+        }
 
-    @projects.setter
-    def projects(self, projects):
+    # -------------------------------------------------------
+    # private methods
+    # -------------------------------------------------------
 
-        self.add_projects(*projects)
+    def _add_objects(self, *objs, **kwargs):
+        """
+        Add a series of objects
+        """
+        names = kwargs.get("names", None)
+        name = kwargs.get("name", None)
 
-    # ..........................................................................
-    @property
-    def scripts_names(self):
-        """
-        Names of all scripts included in this project (list).
-        """
-        lst = list(self._scripts.keys())
-        return lst
+        if len(objs) > 1:
+            for i, obj in enumerate(objs):
+                if names is not None:
+                    self._add_object(obj, names[i])
+                else:
+                    self._add_object(obj)
 
-    # ..........................................................................
-    @property
-    def scripts(self):
-        """
-        Scripts included in this project (list).
-        """
-        s = []
-        for name in self.scripts_names:
-            s.append(self._scripts[name])
-        return s
+        else:  # a single object
+            if names is not None:
+                if len(names) == 1:
+                    self._add_object(objs[0], names[0])
+                else:
+                    raise ValueError(
+                        "the len of names must be the saem as the number of objects"
+                    )
+            if name is not None:
+                self._add_object(objs[0], name)
+            else:
+                self._add_object(objs[0])
 
-    @scripts.setter
-    def scripts(self, scripts):
+    def _add_object(self, obj, name=None):
 
-        self.add_scripts(*scripts)
+        if not _is_projectable(obj):
+            obj = Projectable(obj)
 
-    # ..........................................................................
-    @property
-    def irises_names(self):
-        """
-        Names of all iris objects included in this project (list).
-        """
-        lst = list(self._irises.keys())
-        return lst
-
-    @property
-    def irises(self):
-        """
-        IRIS included in this project excluding those
-        located in subprojects (list).
-        """
-        d = []
-        for name in self.irises_names:
-            d.append(self._irises[name])
-        return d
-
-    @irises.setter
-    def irises(self, irises):
-
-        self.add_irises(*irises)
-
-    @property
-    def allnames(self):
-        """
-        Names of all objects contained in this project (list).
-        """
-        return (
-            self.datasets_names
-            + self.irises_names
-            + self.projects_names
-            + self.scripts_names
-        )
-
-    @property
-    def allitems(self):
-        """
-        All items contained in this project (list).
-        """
-        return (
-            list(self._datasets.items())
-            + list(self._projects.items())
-            + list(self._scripts.items())
-        )
-
-    # ------------------------------------------------------------------------
-    # Public methods
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def implements(self, name=None):
-        """
-        Utility to check if the current object implement `Project`.
-
-        Rather than isinstance(obj, Project) use object.implements('Project').
-        This is useful to check type without importing the module.
-        """
         if name is None:
-            return "Project"
-        else:
-            return name == "Project"
-
-    def copy(self):
-        """
-        Make an exact copy of the current project.
-        """
-        return self.__copy__()
-
-    # ------------------------------------------------------------------------
-    # dataset items
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def add_datasets(self, *datasets):
-        """
-        Add several datasets to the current project.
-
-        Parameters
-        ----------
-        *datasets : series of |NDDataset|
-            Datasets to add to the current project.
-            The name of the entries in the project will be identical to the
-            names of the datasets.
-
-        See Also
-        --------
-        add_dataset : Add a single dataset to the current project.
-
-        Examples
-        --------
-
-        >>> ds1 = scp.NDDataset([1, 2, 3])
-        >>> ds2 = scp.NDDataset([4, 5, 6])
-        >>> ds3 = scp.NDDataset([7, 8, 9])
-        >>> proj = scp.Project()
-        >>> proj.add_datasets(ds1, ds2, ds3)
-        """
-        for ds in datasets:
-            self.add_dataset(ds)
-
-    # ..........................................................................
-    def add_dataset(self, dataset, name=None):
-        """
-        Add a single dataset to the current project.
-
-        Parameters
-        ----------
-        dataset : |NDDataset|
-            Datasets to add.
-            The name of the entry will be the name of the dataset, except
-            if parameter `name` is defined.
-        name : str, optional
-            If provided the name will be used to name the entry in the project.
-
-        See Also
-        --------
-        add_datasets : Add several datasets to the current project.
-
-        Examples
-        --------
-
-        >>> ds1 = scp.NDDataset([1, 2, 3])
-        >>> proj = scp.Project()
-        >>> proj.add_dataset(ds1, name='Toto')
-        """
-
-        dataset.parent = self
-        if name is None:
-            name = dataset.name
+            name = obj.name
 
         n = 1
-        while name in self.allnames:
+        while name in self.names:
             # this name already exists
-            name = f"{dataset.name}-{n}"
-            n += 1
+            name = f"{obj.name}-({n})"
 
-        dataset.name = name
-        self._datasets[name] = dataset
-
-    # ..........................................................................
-    def remove_dataset(self, name):
-        """
-        Remove a dataset from the project.
-
-        Parameters
-        ----------
-        name : str
-            Name of the dataset to remove.
-        """
-        self._datasets[name]._parent = None  # remove the parent info
-        del self._datasets[name]  # remove the object from the list of datasets
-
-    # ..........................................................................
-    def remove_all_dataset(self):
-        """
-        Remove all dataset from the project.
-        """
-        for v in self._datasets.values():
-            v._parent = None
-        self._datasets = {}
-
-    # ------------------------------------------------------------------------
-    # iris items
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def add_irises(self, *irises):
-        """
-        Add several iris objects to the current project.
-
-        Parameters
-        ----------
-        *irises : series of |IRIS|
-            IRIS objects to add to the current project.
-            The name of the entries in the project will be identical to the
-            names of the iris objects.
-
-        See Also
-        --------
-        add_iris : Add a single iris objects to the current project.
-
-        Examples
-        --------
-
-        # todo
-        """
-        for iris in irises:
-            self.add_iris(iris)
-
-    # ..........................................................................
-    def add_iris(self, iris, name=None):
-        """
-        Add a single iris object to the current project.
-
-        Parameters
-        ----------
-        iris : |IRIS|
-            IRIS object to add.
-            The name of the entry will be the name of the iris, except
-            if parameter `name` is defined.
-        name : str, optional
-            If provided the name will be used to name the entry in the project.
-
-        See Also
-        --------
-        add_irises : Add several IRIS obejcts to the current project.
-
-        Examples
-        --------
-        todo
-        """
-
-        iris.parent = self
-        if name is None:
-            name = iris.name
-
-        n = 1
-        while name in self.allnames:
-            # this name already exists
-            name = f"{iris.name}-{n}"
-            n += 1
-
-        iris.name = name
-        self._irises[name] = iris
-
-    # ..........................................................................
-    def remove_iris(self, name):
-        """
-        Remove a dataset from the project.
-
-        Parameters
-        ----------
-        name : str
-            Name of the iris object to remove.
-        """
-        self._irises[name]._parent = None  # remove the parent info
-        del self._irises[name]  # remove the object from the list of iris objects
-
-    # ..........................................................................
-    def remove_all_iris(self):
-        """
-        Remove all iris objects from the project.
-        """
-        for v in self._irises.values():
-            v._parent = None
-        self._irises = {}
-
-    # ------------------------------------------------------------------------
-    # project items
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def add_projects(self, *projects):
-        """
-        Add one or a series of projects to the current project.
-
-        Parameters
-        ----------
-        projects : project instances
-            The projects to add to the current ones.
-        """
-        for proj in projects:
-            self.add_project(proj)
-
-    # ..........................................................................
-    def add_project(self, proj, name=None):
-        """
-        Add one project to the current project.
-
-        Parameters
-        ----------
-        proj : a project instance
-            A project to add to the current one.
-        """
-        proj.parent = self
-        if name is None:
-            name = proj.name
+        # add in objects dictionary
+        if isinstance(obj, Projectable):
+            self.objects[name] = obj.obj
         else:
-            proj.name = name
-        self._projects[name] = proj
+            self.objects[name] = obj
 
-    # ..........................................................................
-    def remove_project(self, name):
-        """
-        Remove one project from the current project.
-
-        Parameters
-        ----------
-        name : str
-            Name of the project to remove.
-        """
-        self._projects[name]._parent = None
-        del self._projects[name]
-
-    # ..........................................................................
-    def remove_all_project(self):
-        """
-        Remove all projects from the current project.
-        """
-        for v in self._projects.values():
-            v._parent = None
-        self._projects = {}
-
-    # ------------------------------------------------------------------------
-    # script items
-    # ------------------------------------------------------------------------
-
-    # ..........................................................................
-    def add_scripts(self, *scripts):
-        """
-        Add one or a series of scripts to the current project.
-
-        Parameters
-        ----------
-        scripts : |Script| instances
-        """
-        for sc in scripts:
-            self.add_script(sc)
-
-    # ..........................................................................
-    def add_script(self, script, name=None):
-        """
-        Add one script to the current project.
-
-        Parameters
-        ----------
-        script : a |Script| instance
-        name : str
-        """
-        script.parent = self
-        if name is None:
-            name = script.name
+        # add in
+        attr = _class_str(obj) + "_objects"
+        if not hasattr(self, attr):
+            setattr(self, attr, {name: obj})
         else:
-            script.name = name
-        self._scripts[name] = script
-
-    # ..........................................................................
-    def remove_script(self, name):
-        self._scripts[name]._parent = None
-        del self._scripts[name]
-
-    # ..........................................................................
-    def remove_all_script(self):
-        for v in self._scripts.values():
-            v._parent = None
-        self._scripts = {}
+            getattr(self, attr)[name] = obj
 
 
-def makescript(priority=50):
-    def decorator(func):
-        ss = dill.dumps(func)
-        print(ss)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            f = func(*args, **kwargs)
-            return f
-
-        return wrapper
-
-    return decorator
+# Utility functions
 
 
-# ======================================================================================================================
-if __name__ == "__main__":
-    pass
+def _class_str(object):
+    return str(type(object)).split("'")[-2].split(".")[-1]
+
+
+def _is_projectable(obj):
+    if hasattr(obj, "name"):
+        return True
+    else:
+        return False
