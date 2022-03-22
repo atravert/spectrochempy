@@ -14,7 +14,7 @@ prefs = preferences
 
 
 def test_project(ds1, ds2, dsm):
-    myp = Project(name="AGIR processing", method="stack")
+    myp = Project(name="AGIR processing")
 
     ds1.name = "toto"
     ds2.name = "tata"
@@ -24,41 +24,37 @@ def test_project(ds1, ds2, dsm):
     assert ds1.shape == ds.shape
     assert ds is ds1
 
-    myp.add_datasets(ds1, ds2, dsm)
+    myp.add(ds1, ds2, dsm)
 
-    print(myp.datasets_names)
-    assert myp.datasets_names[-1] == "titi"
-    assert ds1.parent == myp
+    assert myp.names[-1] == "titi"
+    # assert ds1.parent == myp
 
     # iteration
     d = []
     for item in myp:
         d.append(item)
 
-    assert d[1][0] == "tata"
+    assert d[1] == "tata"
 
     ##
     # add sub project
     msp1 = Project(name="AGIR ATG")
-    msp1.add_dataset(ds1)
-    assert ds1.parent == msp1  # ds1 has changed of project
-    assert ds1.name not in myp.datasets_names
+    msp1.add(ds1)
+    # assert ds1.parent == msp1  # ds1 has changed of project
+    # assert ds1.name not in myp.datasets_names
 
     msp2 = Project(name="AGIR IR")
 
-    myp.add_projects(msp1, msp2)
+    myp.add(msp1, msp2)
 
     print(myp)
     # an object can be accessed by it's name whatever it's type
-    assert "tata" in myp.allnames
+    assert "tata" in myp.names
     myp["titi"]
     assert myp["titi"] == dsm
 
     # import multiple objects in Project
-    myp2 = Project(msp1, msp2, ds1, ds2)  # multi dataset and project and no
-    # names
-
-    print(myp2)
+    myp2 = Project(msp1, msp2, ds1, ds2)  # multi dataset and project and no names
 
 
 def test_empty_project():
