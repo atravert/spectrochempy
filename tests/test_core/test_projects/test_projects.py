@@ -27,6 +27,7 @@ def test_project(ds1, ds2, dsm):
     myp.add(ds1, ds2, dsm)
 
     assert myp.names[-1] == "titi"
+    # AT: no parent for the moment
     # assert ds1.parent == myp
 
     # iteration
@@ -40,51 +41,62 @@ def test_project(ds1, ds2, dsm):
     # add sub project
     msp1 = Project(name="AGIR ATG")
     msp1.add(ds1)
+    # AT: no parenty for the moment
     # assert ds1.parent == msp1  # ds1 has changed of project
+
+    # A.T.: I don't see the motivation for such a behaviour:
     # assert ds1.name not in myp.datasets_names
 
     msp2 = Project(name="AGIR IR")
 
     myp.add(msp1, msp2)
 
-    print(myp)
     # an object can be accessed by it's name whatever it's type
     assert "tata" in myp.names
-    myp["titi"]
     assert myp["titi"] == dsm
 
     # import multiple objects in Project
     myp2 = Project(msp1, msp2, ds1, ds2)  # multi dataset and project and no names
+    assert myp2.names == [msp1.name, msp2.name, ds1.name, ds2.name]
 
 
 def test_empty_project():
     proj = Project(name="XXX")
     assert proj.name == "XXX"
-    assert str(proj).strip() == "Project XXX:\n    (empty project)"
+    assert str(proj).strip() == "XXX (empty Project)"
 
 
 def test_project_with_script():
     # Example from tutorial agir notebook
+    # AT: does not deal with meta for now
+    # proj = Project(
+    #     Project(name="P350", label=r"$\mathrm{M_P}\,(623\,K)$"),
+    #     Project(name="A350", label=r"$\mathrm{M_A}\,(623\,K)$"),
+    #     Project(name="B350", label=r"$\mathrm{M_B}\,(623\,K)$"),
+    #     name="HIZECOKE_TEST",
+    # )
     proj = Project(
-        Project(name="P350", label=r"$\mathrm{M_P}\,(623\,K)$"),
-        Project(name="A350", label=r"$\mathrm{M_A}\,(623\,K)$"),
-        Project(name="B350", label=r"$\mathrm{M_B}\,(623\,K)$"),
+        Project(name="P350"),
+        Project(name="A350"),
+        Project(name="B350"),
         name="HIZECOKE_TEST",
     )
 
-    assert proj.projects_names == ["P350", "A350", "B350"]
+    assert proj.names == ["P350", "A350", "B350"]
 
     # add a dataset to a subproject
     ir = NDDataset([1, 2, 3])
     tg = NDDataset([1, 3, 4])
+
+    # AT: to do
     proj.A350["IR"] = ir
     proj["TG"] = tg
 
     print(proj.A350)
     print(proj)
-    print(proj.A350.label)
+    # print(proj.A350.label)
 
-    f = proj.save()
+    f = proj.save(confirm=False)
 
     newproj = Project.load("HIZECOKE_TEST")
     # print(newproj)
@@ -128,9 +140,9 @@ def test_save_and_load_project(ds1, ds2):
     ds1.name = "toto"
     ds2.name = "tata"
 
-    myp.add_datasets(ds1, ds2)
+    myp.add(ds1, ds2)
 
-    fn = myp.save()
+    fn = myp.save(confirm=False)
 
     proj = Project.load(fn)
 

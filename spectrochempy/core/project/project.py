@@ -130,23 +130,42 @@ class Project(NDIO):
                 return any([item in project for project in self.projects])
 
     def __dir__(self):
-        attr = [
+        return [
             "name",
-            "description" "names",
+            "description",
             "objects",
-            "projects",
         ]
 
-        return attr
+    def __getattr__(self, name):
+
+        if "_validate" in name or "_changed" in name:
+            # this is for traits management
+            return super().__getattribute__(name)
+
+        if name in self.names:
+            # this allows to access project object by attribute
+            return self[name]
 
     def __getitem__(self, key):
         if not isinstance(key, str):
             raise KeyError("The key must be a string.")
-        return [object for name, object in self.objects.items() if name == key][0]
+        if key not in self.objects.keys():
+            raise KeyError("The key does not exist.")
+
+        return self.objects[key]
 
     def __iter__(self):
+
         for object in self.objects:
             yield object
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, str):
+            raise KeyError("The key must be a string.")
+        if key in self.names:
+            self[key] = value
+        else:
+            self.add(value, name=key)
 
     def __str__(self):
         def str_proj_(project, level=0):
@@ -155,14 +174,17 @@ class Project(NDIO):
                 indent = "   " * level + "⤷ "
             else:
                 indent = ""
-            s += f"{indent}{project.name} (Project):\n"
-            for name, obj in project.objects.items():
-                if not isinstance(obj, Project):
-                    indent = "   " * level
-                    s += f"{indent}   ⤷ {name} ({_class_str(obj)})\n"
-                else:
-                    level += 1
-                    s += str_proj_(obj, level=level)
+            if self.is_empty:
+                s += f"{indent}{project.name} (empty Project)\n"
+            else:
+                s += f"{indent}{project.name} (Project):\n"
+                for name, obj in project.objects.items():
+                    if not isinstance(obj, Project):
+                        indent = "   " * level
+                        s += f"{indent}   ⤷ {name} ({_class_str(obj)})\n"
+                    else:
+                        level += 1
+                        s += str_proj_(obj, level=level)
             return s
 
         return str_proj_(self)
@@ -215,6 +237,18 @@ class Project(NDIO):
         """
         self._add_objects(*objs, **kwargs)
 
+    def implements(self, name=None):
+        """
+        Utility to check if the current object implement `Project`.
+
+        Rather than isinstance(obj, Project) use object.implements('Project').
+        This is useful to check type without importing the module.
+        """
+        if name is None:
+            return "Project"
+        else:
+            return name == "Project"
+
     def remove(self, name):
         """
         Remove object from the  project.
@@ -230,16 +264,26 @@ class Project(NDIO):
         self.objects.pop(name)
 
     @property
+    def is_empty(self):
+        if self.names == []:
+            return True
+        else:
+            return False
+
+    @property
     def names(self):
         return [key for key in self.objects.keys()]
 
     @property
     def projects(self):
-        return {
+        out = {}
+        list = [
             {name: object}
             for name, object in self.objects.items()
             if isinstance(object, Project)
-        }
+        ]
+        for item in list:
+            out.update(item)
 
     # -------------------------------------------------------
     # private methods
@@ -290,13 +334,6 @@ class Project(NDIO):
             self.objects[name] = obj.obj
         else:
             self.objects[name] = obj
-
-        # add in
-        attr = _class_str(obj) + "_objects"
-        if not hasattr(self, attr):
-            setattr(self, attr, {name: obj})
-        else:
-            getattr(self, attr)[name] = obj
 
 
 # Utility functions
