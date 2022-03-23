@@ -382,6 +382,9 @@ class NDIO(HasTraits):
                         obj.datasets = datasets
 
                     elif key in ["_objects"]:
+                        # if hasattr(implements)
+                        # trouver classe
+                        #      objects = [item_to_attr(k
                         projects = [item_to_attr(Project(), js) for js in val]
                         obj.projects = projects
 
