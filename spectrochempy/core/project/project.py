@@ -10,8 +10,10 @@ __all__ = ["Project"]
 import datetime
 from spectrochempy.core.dataset.nddataset import NDIO
 
+from traitlets import HasTraits, Any, Dict
 
-class Projectable:
+
+class Projectable:  # (Hastraits
     """
     Makes an object projectable
 
@@ -49,7 +51,7 @@ class Projectable:
             self.date = obj.date
 
 
-class Project(NDIO):
+class Project(HasTraits, NDIO):
     """
     A manager for spectrochempy objects datasets and scripts.
 
@@ -95,6 +97,8 @@ class Project(NDIO):
     Script : Executables scripts container.
 
     """
+
+    _objects = Dict(Any)  # indique que _objects a
 
     def __init__(self, *objs, objnames=None, name=None, description=None):
 
@@ -162,10 +166,20 @@ class Project(NDIO):
     def __setitem__(self, key, value):
         if not isinstance(key, str):
             raise KeyError("The key must be a string.")
+
         if key in self.names:
             self[key] = value
         else:
             self.add(value, name=key)
+
+    def __repr__(self):
+        n = len(self.names)
+        if n == 0:
+            return "Project (empty)"
+        elif n == 1:
+            return "Project (1 object)"
+        else:
+            return f"Project ({n} objects)"
 
     def __str__(self):
         def str_proj_(project, level=0):
@@ -276,14 +290,11 @@ class Project(NDIO):
 
     @property
     def projects(self):
-        out = {}
-        list = [
-            {name: object}
-            for name, object in self.objects.items()
+        return {
+            name: object
+            for (name, object) in self.objects.items()
             if isinstance(object, Project)
-        ]
-        for item in list:
-            out.update(item)
+        }
 
     # -------------------------------------------------------
     # private methods
