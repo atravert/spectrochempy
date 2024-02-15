@@ -57,15 +57,65 @@ class BaseConfigurable(MetaConfigurable):
     # Runtime Parameters
     # ----------------------------------------------------------------------------------
     _applied = tr.Bool(False, help="False if the model was not yet applied")
-    _masked_rc = tr.Tuple(allow_none=True, help="List of masked rows and columns")
-    _X = NDDatasetType(allow_none=True, help="Data to fit a model")
-    _X_mask = Array(allow_none=True, help="Mask information of the input X data")
-    _X_preprocessed = Array(help="Preprocessed inital input X data")
-    _X_shape = tr.Tuple(
-        help="Original shape of the input X data, " "before any transformation"
-    )
-    _X_coordset = tr.Instance(CoordSet, allow_none=True)
+
     _is_dataset = tr.Bool(help="True if the input X data is a NDDataset")
+
+    _multiblock = tr.Bool(False, help="True if the data consists in several NDDatasets")
+
+    _concatenation_axis = tr.Enum(
+        (0, 1, 2),
+        allow_none=True,
+        default_value=None,
+        help="Concatenation axis for multiblock data. "
+        "None: no concatenation, "
+        "O: column-wise, 1: row-wise, 2: column- & row-wise."
+        "Default is None when multiblock is False, 0 when X is "
+        "a list of datasets is given and 2 when a list of lists"
+        "od NDDataset is given",
+    )
+
+    _masked_rc = tr.Tuple(allow_none=True, help="List of masked rows and columns")
+
+    _X = tr.Union(
+        [
+            tr.List(help="A list of NDDatasets to fit a model"),
+            NDDatasetType(allow_none=True, help="A single NDDataset to fit a " "model"),
+        ]
+    )
+
+    _X_mask = tr.Union(
+        [
+            tr.List(
+                Array(allow_none=True, help="Masks information of the input X data")
+            ),
+            Array(allow_none=True, help="Mask information of the input X data"),
+        ]
+    )
+
+    _X_preprocessed = Array(
+        help="Preprocessed initial input X data, including the "
+        "concatenation of all datasets when mltiblock data "
+        "are used"
+    )
+
+    _X_shape = tr.Union(
+        [
+            tr.List(
+                help="Original shapes of the input X data before any transformation"
+            ),
+            tr.Tuple(
+                help="Original shape of the input X data before any transformation"
+            ),
+        ]
+    )
+
+    _X_coordset = tr.Union(
+        [
+            tr.Instance(CoordSet, allow_none=True),
+            tr.List(tr.Instance(CoordSet, allow_none=True)),
+        ]
+    )
+
     _warm_start = tr.Bool(False)
     _output_type = tr.Enum(
         ["NDDataset", "ndarray"],
@@ -81,15 +131,28 @@ class BaseConfigurable(MetaConfigurable):
     # Write here traits like e.g.,
     #     A = Unicode("A", help='description").tag(config=True)
 
+    concatenation_axis = tr.Enum(
+        (0, 1, 2),
+        allow_none=True,
+        default_value=None,
+        help="Concatenation axis for multiblock data. "
+        "None: no concatenation, "
+        "O: column-wise, 1: row-wise, 2: column- & row-wise."
+        "Default is None when multiblock is False, 0 when X is "
+        "a list of datasets is given and 2 when a list of lists"
+        "od NDDataset is given",
+    )
     # ----------------------------------------------------------------------------------
     # Initialization
     # ----------------------------------------------------------------------------------
+
     def __init__(
         self,
         *,
         log_level=logging.WARNING,
         **kwargs,
     ):
+
         """ """
         # An empty __doc__ is placed here, else Configurable.__doc__
         # will appear when there is no __init___.doc in subclass
@@ -292,30 +355,93 @@ class BaseConfigurable(MetaConfigurable):
         # validation fired when self._X is assigned
         X = proposal.value
 
-        # for the following we need X with two dimensions
-        # So let's generate the un-squeezed X
-        X = X.atleast_2d()  # self._make_unsqueezed_dataset(X)
+        # X can be a NDDataset, or a list or tuple of NDDatasets. In the latter case, a
+        # concatenation_axis must have been given.
 
-        # if X is complex or quaternion, we will work on the real part only
-        if X.is_complex or X.is_quaternion:
-            X = X.real
+        if isinstance(X, NDDataset):
+            self._is_dataset = True
+            self._multiblock = False
+            X = [X]
+        elif isinstance(X, (list, tuple)):
+            self._multiblock = True
+            if all([isinstance(x, (list, tuple)) for x in X]):
+                # case of a list/tuple of lists/tuples of NDDatasets
+                raise NotImplementedError(
+                    "row- and column-wise multiblock " "not yet implemented"
+                )
+                # todo: check that all elements of lists/tuples are NDDataset and have
+                # the correct shape
+                self._multiblock = True
+                self._concatenation_axis = 2
 
-        # as in fit methods we often use np.linalg library, we cannot handle directly
-        # masked data (so we remove them here and they will be restored at the end of
-        # the process during transform or inverse transform methods
-        # store the original shape as it will be eventually modified as welle- as the
-        # original coordset
-        self._X_shape = X.shape
+            elif not all([isinstance(x, NDDataset) for x in X]):
+                raise ValueError("X must be a NDDataset or a list of NDDatasets")
+            elif self._concatenation_axis is None:
+                # we have a list of NDDatasets, try to guess the concatenation axis
+                samey, samex = False, False
+                if all([x.data.shape[0] == X[0].data.shape[0] for x in X]):
+                    samey = True
+                if all([x.data.shape[1] == X[0].data.shape[1] for x in X]):
+                    samex = True
+                if samey and samex:
+                    raise ValueError(
+                        "all NDDatasets in X have both dimensions with the "
+                        "length: the concatenation axis can't be guessed"
+                    )
+                elif not samey and not samex:
+                    raise ValueError(
+                        "all NDDatasets in X must have at least one dimension "
+                        "with the same length"
+                    )
+                elif samey:
+                    self._concatenation_axis = 1
+                else:
+                    self._concatenation_axis = 0
+            else:
+                # we have a list of NDDatasets and the concatenation axis was given
+                # todo: check that all NDDatasets have the correct shape
+                pass
 
-        # store the mask because it may be destroyed
-        self._X_mask = X._mask.copy()
+            self._X_shape = []
+            self._X_mask = []
+            self._X_coordset = []
 
-        # and the original coordset
-        self._X_coordset = copy(X._coordset)
+        for x in X:
+            # for the following we need x with two dimensions
+            # So let's generate the un-squeezed x
+            x = x.atleast_2d()  # self._make_unsqueezed_dataset(x)
 
-        # remove masked data and return modified dataset
-        X = self._remove_masked_data(X)
-        return X
+            # if x is complex or quaternion, we will work on the real part only
+            if x.is_complex or x.is_quaternion:
+                x = x.real
+
+            if not self._multiblock:
+                # as in fit methods we often use np.linalg library, we cannot handle directly
+                # masked data (so we remove them here and they will be restored at the end of
+                # the process during transform or inverse transform methods
+                # store the original shape as it will be eventually modified as well as the
+                # original coordset
+                self._X_shape = x.shape
+
+                # store the mask because it may be destroyed
+                self._X_mask = x._mask.copy()
+
+                # and the original coordset
+                self._X_coordset = copy(x._coordset)
+
+            else:
+                # the same, but as lists
+                self._X_shape.append(x.shape)
+                self._X_mask.append(x._mask.copy())
+                self._X_coordset.append(x._coordset)
+
+            # remove masked data and return modified dataset
+            x = self._remove_masked_data(x)
+
+        if not self._multiblock:
+            return X[0]
+        else:
+            return X
 
     @property
     def _X_is_missing(self):
@@ -335,10 +461,39 @@ class BaseConfigurable(MetaConfigurable):
         # to be optionally replaced by user defined function (with the same name)
         X = change.new
         # .... preprocessing as scaling, centering, ... must return a ndarray with
-        #  same shape a X.data
+        #  same shape a X.data, or a list of ndarrays with same shape as the NDDatasets
 
         # Set a X.data by default
-        self._X_preprocessed = X.data
+        if not self._multiblock:
+            self._X_preprocessed = X.data
+        else:
+            # multiblock: must be concatenated
+            if self._concatenation_axis in (0, 1):
+                try:
+                    self._X_preprocessed = np.concatenate(
+                        [x.data for x in X], axis=self._concatenation_axis
+                    )
+                except ValueError as e:
+                    raise ValueError(
+                        f"The concatenation of input data along the axis "
+                        f"{self._concatenation_axis} went wrong with "
+                        f"the followig error: {e}. Please check your input "
+                        f"data."
+                    )
+
+            else:
+                try:
+                    # concatenate list of lists of NDDataset
+                    col = []
+                    for row in X:
+                        col.append(np.concatenate([x.data for x in row], axis=1))
+                    self._X_preprocessed = np.concatenate([x.data for x in col], axis=0)
+                except ValueError as e:
+                    raise ValueError(
+                        f"The concatenation of input data went wrong with "
+                        f"the followig error: {e}. Please check your input "
+                        f"data."
+                    )
 
     # ----------------------------------------------------------------------------------
     # Public methods and property

@@ -16,7 +16,6 @@ import spectrochempy as scp
 from spectrochempy.analysis.decomposition.mcrals import MCRALS
 from spectrochempy.core import set_loglevel
 from spectrochempy.core.dataset.nddataset import Coord, NDDataset
-from spectrochempy.processing.transformation.npy import dot
 from spectrochempy.utils import docstrings as chd
 from spectrochempy.utils import testing
 from spectrochempy.utils.plots import show
@@ -82,7 +81,7 @@ def model():
             c = [250, 750]
             w = [100, 100]
             noise_spec = [0.0, 0.0]
-            noise_conc = [0.0, 0.0]
+            noise_conc = [0.1, 0.0]
 
             c0 = [10, 1]
             l = np.array([-2, 2]) * 1e-2
@@ -117,11 +116,10 @@ def model():
 
 @pytest.fixture
 def data(model):
-    D = dot(model.C, model.St)
+    D = scp.dot(model.C, model.St)
     D.title = "intensity"
     D.units = "absorbance"
-    D.set_coordset(None, None)
-    D.y.title = "elution time"
+    D.y.title = "time"
     D.x.title = "wavelength"
     D.y.units = "hours"
     D.x.units = "cm^-1"
@@ -190,7 +188,45 @@ def test_MCRALS(model, data):
     assert np.max(np.abs(mcr.C - mcr1.C)) < 1.0e-12
     assert np.max(np.abs(mcr.St - mcr1.St)) < 1.0e-12
 
+    # test with several datasets
+    mcr = MCRALS(log_level="INFO", tol=30.0)
+
+    mcr.fit([D[:, :50], D[:, 50:]], C0, concatenation_axis=1)
+    assert "converged !" in mcr.log[-15:]
+    assert mcr.C.shape == (10, 2)
+    assert mcr.St[0].x == D[:, :50].x
+    assert mcr.St[1].shape == (2, 50)
+
+    mcr = MCRALS(tol=30.0)
+    mcr.tol = 30.0
+    mcr.fit([D[:, :50], D[:, 50:]], [St0[:, :50], St0[:, 50:]], concatenation_axis=1)
+    assert mcr.St[0].shape == (2, 50)
+    assert "converged !" in mcr.log[-15:]
+    assert mcr.C.shape == (10, 2)
+    assert mcr.St[0].shape == (2, 50)
+    assert mcr.St[1].shape == (2, 50)
+
+    mcr = MCRALS(tol=30.0)
+    mcr.fit([D, D[:5]], [C0, C0[:5]])
+    assert "converged !" in mcr.log[-15:]
+    assert mcr.C[0].shape == (10, 2)
+    assert mcr.C[1].shape == (5, 2)
+    assert mcr.St.shape == (2, 100)
+
+    mcr = MCRALS(tol=30.0)
+    mcr.fit([D, D[:5]], St0)
+    assert "converged !" in mcr.log[-15:]
+    assert mcr.C[0].shape == (10, 2)
+    assert mcr.C[1].shape == (5, 2)
+    assert mcr.St.shape == (2, 100)
+
+    try:
+        mcr.fit([(D[:5, :50], D[:5, 50:]), (D[5:, :50], D[5:, 50:])], (C0[:5], C0[5:]))
+    except NotImplementedError as e:
+        assert "row- and column-wise multiblock not yet implemented" in e.args[0]
+
     # test diverging
+    mcr = MCRALS()
     mcr.monoIncConc = [0, 1]
     mcr.monoIncTol = 1.0
     mcr.unimodSpec = [0, 1]

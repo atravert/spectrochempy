@@ -15,6 +15,7 @@ from typing import Type, TypeVar
 from warnings import warn
 
 import traitlets as tr
+from numpy import split
 
 from spectrochempy.utils.docstrings import _docstring
 
@@ -353,117 +354,161 @@ class _set_output(object):
 
         out = []
         for data, meta_from in zip(data_tuple, meta_from_tuple):
-            X_transf = NDDataset(data)
 
-            # Now set the NDDataset attributes from the original X
-
+            # Set the NDDataset attributes from the original X
             # determine the input X dataset
             X = getattr(obj, meta_from)
 
-            if self.units is not None:
-                if self.units == "keep":
-                    X_transf.units = X.units
-                else:
-                    X_transf.units = self.units
-            X_transf.name = f"{X.name}_{obj.name}.{self.method.__name__}"
-            X_transf.history = f"Created using method {obj.name}.{self.method.__name__}"
-            if self.title is not None:
-                if self.title == "keep":
-                    X_transf.title = X.title
-                else:
-                    X_transf.title = self.title
-            # make coordset
-            M, N = X.shape
+            # if multiblock
+            if getattr(obj, "_multiblock"):
+                concatenation_axis = getattr(obj, "_concatenation_axis")
+                # For blocks along a single axis, we determine if the
+                # data should be split.
+                if (concatenation_axis == 0 and self.typex == "components") or (
+                    concatenation_axis == 1 and self.typey == "components"
+                ):
+                    indices = [x.shape[concatenation_axis] for x in X][:-1]
+                    for i, idx in enumerate(indices):
+                        indices[i] += indices[i - 1] if i > 0 else 0
+                    data = split(data, indices, axis=concatenation_axis)
+                    X_transf = [NDDataset(d) for d in data]
 
-            if X_transf.shape == X.shape and self.typex is None and self.typey is None:
-                X_transf.dims = X.dims
-                X_transf.set_coordset({X.dims[0]: X.coord(0), X.dims[1]: X.coord(1)})
+                elif concatenation_axis == 2:
+                    # the blocks are along both axis
+                    # todo: implement this case
+                    raise NotImplementedError(
+                        "Not yet implemented for multiblock " "along both axes"
+                    )
+                else:
+                    # no split
+                    X_transf = [NDDataset(data)]
+
             else:
-                if self.typey == "components":
-                    X_transf.dims = ["k", X.dims[1]]
-                    X_transf.set_coordset(
-                        {
-                            "k": Coord(
-                                None,
-                                labels=["#%d" % (i) for i in range(X_transf.shape[0])],
-                                title="components",
-                            ),
-                            X.dims[1]: X.coord(1).copy()
-                            if X.coord(-1) is not None
-                            else None,
-                        }
-                    )
-                if self.typex == "components":
-                    X_transf.dims = [X.dims[0], "k"]
-                    X_transf.set_coordset(
-                        {
-                            X.dims[0]: X.coord(0).copy()
-                            if X.coord(0) is not None
-                            else None,
-                            # cannot use X.y in case of transposed X
-                            "k": Coord(
-                                None,
-                                labels=["#%d" % (i) for i in range(X_transf.shape[-1])],
-                                title="components",
-                            ),
-                        }
-                    )
-                if self.typex == "features":
-                    X_transf.dims = ["k", X.dims[1]]
-                    X_transf.set_coordset(
-                        {
-                            "k": Coord(
-                                None,
-                                labels=["#%d" % (i) for i in range(X_transf.shape[-1])],
-                                title="components",
-                            ),
-                            X.dims[1]: X.coord(1).copy()
-                            if X.coord(1) is not None
-                            else None,
-                        }
-                    )
-                if self.typey == "features":
-                    X_transf.dims = [X.dims[1], "k"]
-                    X_transf.set_coordset(
-                        {
-                            X.dims[1]: X.coord(1).copy()
-                            if X.coord(1) is not None
-                            else None,
-                            "k": Coord(
-                                None,
-                                labels=["#%d" % (i) for i in range(X_transf.shape[-1])],
-                                title="components",
-                            ),
-                        }
-                    )
-                if self.typesingle == "components":
-                    # occurs when the data are 1D such as ev_ratio...
-                    X_transf.dims = ["k"]
-                    X_transf.set_coordset(
-                        k=Coord(
-                            None,
-                            labels=["#%d" % (i) for i in range(X_transf.shape[-1])],
-                            title="components",
-                        ),
-                    )
-                if self.typesingle == "targets":
-                    # occurs when the data are 1D such as PLSRegression intercept...
-                    if X.coordset[0].labels is not None:
-                        labels = X.coordset[0].labels
-                    else:
-                        labels = ["#%d" % (i + 1) for i in range(X.shape[-1])]
-                    X_transf.dims = ["j"]
-                    X_transf.set_coordset(
-                        j=Coord(
-                            None,
-                            labels=labels,
-                            title="targets",
-                        ),
-                    )
+                # monoblock
+                X_transf = [NDDataset(data)]
+                X = [X]
 
-            # eventually restore masks
-            X_transf = obj._restore_masked_data(X_transf, axis=axis)
-            out.append(X_transf.squeeze())
+            for x_transf, x in zip(X_transf, X):
+                if self.units is not None:
+                    if self.units == "keep":
+                        x_transf.units = x.units
+                    else:
+                        x_transf.units = self.units
+                x_transf.name = f"{x.name}_{obj.name}.{self.method.__name__}"
+                x_transf.history = (
+                    f"Created using method {obj.name}.{self.method.__name__}"
+                )
+                if self.title is not None:
+                    if self.title == "keep":
+                        x_transf.title = x.title
+                    else:
+                        x_transf.title = self.title
+
+                if (
+                    x_transf.shape == x.shape
+                    and self.typex is None
+                    and self.typey is None
+                ):
+                    x_transf.dims = x.dims
+                    x_transf.set_coordset(
+                        {x.dims[0]: x.coord(0), x.dims[1]: x.coord(1)}
+                    )
+                else:
+                    if self.typey == "components":
+                        x_transf.dims = ["k", x.dims[1]]
+                        x_transf.set_coordset(
+                            {
+                                "k": Coord(
+                                    None,
+                                    labels=[
+                                        "#%d" % (i) for i in range(x_transf.shape[0])
+                                    ],
+                                    title="components",
+                                ),
+                                x.dims[1]: x.coord(1).copy()
+                                if x.coord(-1) is not None
+                                else None,
+                            }
+                        )
+                    if self.typex == "components":
+                        x_transf.dims = [x.dims[0], "k"]
+                        x_transf.set_coordset(
+                            {
+                                x.dims[0]: x.coord(0).copy()
+                                if x.coord(0) is not None
+                                else None,
+                                # cannot use X.y in case of transposed X
+                                "k": Coord(
+                                    None,
+                                    labels=[
+                                        "#%d" % (i) for i in range(x_transf.shape[-1])
+                                    ],
+                                    title="components",
+                                ),
+                            }
+                        )
+                    if self.typex == "features":
+                        x_transf.dims = ["k", x.dims[1]]
+                        x_transf.set_coordset(
+                            {
+                                "k": Coord(
+                                    None,
+                                    labels=[
+                                        "#%d" % (i) for i in range(x_transf.shape[-1])
+                                    ],
+                                    title="components",
+                                ),
+                                x.dims[1]: x.coord(1).copy()
+                                if x.coord(1) is not None
+                                else None,
+                            }
+                        )
+                    if self.typey == "features":
+                        x_transf.dims = [x.dims[1], "k"]
+                        x_transf.set_coordset(
+                            {
+                                x.dims[1]: x.coord(1).copy()
+                                if x.coord(1) is not None
+                                else None,
+                                "k": Coord(
+                                    None,
+                                    labels=[
+                                        "#%d" % (i) for i in range(x_transf.shape[-1])
+                                    ],
+                                    title="components",
+                                ),
+                            }
+                        )
+                    if self.typesingle == "components":
+                        # occurs when the data are 1D such as ev_ratio...
+                        x_transf.dims = ["k"]
+                        x_transf.set_coordset(
+                            k=Coord(
+                                None,
+                                labels=["#%d" % (i) for i in range(x_transf.shape[-1])],
+                                title="components",
+                            ),
+                        )
+                    if self.typesingle == "targets":
+                        # occurs when the data are 1D such as PLSRegression intercept...
+                        if x.coordset[0].labels is not None:
+                            labels = x.coordset[0].labels
+                        else:
+                            labels = ["#%d" % (i + 1) for i in range(x.shape[-1])]
+                        x_transf.dims = ["j"]
+                        x_transf.set_coordset(
+                            j=Coord(
+                                None,
+                                labels=labels,
+                                title="targets",
+                            ),
+                        )
+
+                # eventually restore masks, only for single block
+                # todo: restore mask for multiblock
+                if not getattr(obj, "_multiblock"):
+                    x_transf = obj._restore_masked_data(x_transf, axis=axis)
+                out.append(x_transf.squeeze())
 
         if len(out) == 1:
             return out[0]

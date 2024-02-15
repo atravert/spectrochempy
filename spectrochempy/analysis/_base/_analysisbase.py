@@ -141,7 +141,7 @@ class AnalysisConfigurable(BaseConfigurable):
         self._fitted = False  # reinit this flag
 
         # fire the X and eventually Y validation and preprocessing.
-        # X and Y are expected to be resp. NDDataset and NDDataset or list of NDDataset.
+        # X and Y are expected to be NDDataset or list of NDDatasets.
         self._X = X
         if Y is not None:
             self._Y = Y
@@ -195,13 +195,19 @@ class AnalysisConfigurable(BaseConfigurable):
         # We use X property only to show this information to the end user. Internally
         # we use _X attribute to refer to the input data
         X = self._X.copy()
-        if np.any(self._X_mask):
-            # restore masked row and column if necessary
-            X = self._restore_masked_data(X, axis="both")
-        if self._is_dataset or self._output_type == "NDDataset":
-            return X
+
+        if isinstance(X, NDDataset):
+            if np.any(self._X_mask):
+                # restore masked row and column if necessary
+                X = self._restore_masked_data(X, axis="both")
+            if self._is_dataset or self._output_type == "NDDataset":
+                return X
+            else:
+                return np.asarray(X)
+
         else:
-            return np.asarray(X)
+            # todo: complete this case (list of NDDataset)
+            return X
 
 
 # ======================================================================================

@@ -33,6 +33,7 @@ from spectrochempy.analysis._base._analysisbase import (
 )
 from spectrochempy.application import info_
 from spectrochempy.extern.traittypes import Array
+from spectrochempy.processing.transformation.concatenate import concatenate
 from spectrochempy.utils.decorators import deprecated, signature_has_configurable_traits
 from spectrochempy.utils.docstrings import _docstring
 
@@ -86,16 +87,16 @@ class MCRALS(DecompositionAnalysis):
         0.1,
         help=(
             "Convergence criterion on the change of residuals (percent change of "
-            "standard deviation of residuals)."
+            "standard deviation of residuals), default is 0.1."
         ),
     ).tag(config=True)
 
-    max_iter = tr.Integer(50, help="Maximum number of :term:`ALS` iteration.").tag(
-        config=True
-    )
+    max_iter = tr.Integer(
+        50, help="Maximum number of :term:`ALS` iteration, " "default is 50"
+    ).tag(config=True)
 
     maxdiv = tr.Integer(
-        5, help="Maximum number of successive non-converging iterations."
+        5, help="Maximum number of successive non-converging iterations, default is 5."
     ).tag(config=True)
 
     solverConc = tr.Enum(
@@ -104,7 +105,7 @@ class MCRALS(DecompositionAnalysis):
         help=(
             r"""Solver used to get `C` from `X` and `St`\ .
 
-- ``'lstsq'``\ : uses ordinary least squares with `~numpy.linalg.lstsq`
+- ``'lstsq'``\ (default): uses ordinary least squares with `~numpy.linalg.lstsq`
 - ``'nnls'``\ : non-negative least squares (`~scipy.optimize.nnls`\ ) are applied
   sequentially on all profiles
 - ``'pnnls'``\ : non-negative least squares (`~scipy.optimize.nnls`\ ) are applied on
@@ -119,12 +120,16 @@ class MCRALS(DecompositionAnalysis):
         help=(
             r"""Non-negativity constraint on concentrations.
 
-- ``'all'``\ : all concentrations profiles are considered
+- ``'all'``\ (default): all concentrations profiles are considered
   non-negative.
 - `list` of indexes: the corresponding profiles are considered non-negative,
   not the others. For instance ``[0, 2]`` indicates that profile \#0 and \#2
   are non-negative while profile \#1 *can* be negative.
-- ``[]``\ : all profiles can be negative."""
+- ``[]``\ : all profiles can be negative.
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding profiles are
+  considered non-negative, not the others. For instance ``[(0, 2), (1)]`` indicates that
+  2 profiles are considered non-negative in the first block and only one in the second.
+          """
         ),
     ).tag(config=True)
 
@@ -134,11 +139,16 @@ class MCRALS(DecompositionAnalysis):
         help=(
             r"""Unimodality constraint on concentrations.
 
-- ``'all'``\ : all concentrations profiles are considered unimodal.
+- ``'all'``\ (default): all concentrations profiles are considered unimodal.
 - `list` of indexes: the corresponding profiles are considered unimodal, not the others.
   For instance ``[0, 2]`` indicates that profile ``#0`` and ``#2`` are unimodal while
   profile ``#1`` *can* be multimodal.
-- ``[]``\ : all profiles can be multimodal."""
+- ``[]``\ : all profiles can be multimodal.
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding
+  profiles are considered unimodal, not the others. For instance ``[[0, 2), (1)]``
+  indicates that 2 profiles are considered unimodal in the first block and only one in
+  the second.
+          """
         ),
     ).tag(config=True)
 
@@ -148,7 +158,7 @@ class MCRALS(DecompositionAnalysis):
         help=(
             r"""Method to apply unimodality.
 
-- ``'strict'``\ : values deviating from :term:`unimodality` are reset to the value of the
+- ``'strict'``\ (default): values deviating from :term:`unimodality` are reset to the value of the
   previous point.
 - ``'smooth'``\ : both values (deviating point and previous point) are modified to avoid
   steps in the concentration profile."""
@@ -158,7 +168,7 @@ class MCRALS(DecompositionAnalysis):
     unimodConcTol = tr.Float(
         default_value=1.1,
         help=(
-            r"""Tolerance parameter for :term:`unimodality`\ .
+            r"""Tolerance parameter for :term:`unimodality`\ (default is 1.1).
 
 Correction is applied only if:
 
@@ -172,16 +182,20 @@ Correction is applied only if:
         help=(
             r"""Monotonic decrease constraint on concentrations.
 
-- ``[]``\ : no constraint is applied.
+- ``[]``\ (default): no constraint is applied.
 - `list` of indexes: the corresponding profiles are considered to decrease
   monotonically, not the others. For instance ``[0, 2]`` indicates that profile ``#0``
-  and ``#2`` are decreasing while profile ``#1`` *can* increase."""
+  and ``#2`` are decreasing while profile ``#1`` *can* increase.
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding
+  profiles are considered monotonic, not the others. For instance ``[(0, 2), (1)]``
+  indicates that 2 profiles are considered monotonic in the first block and only one in
+  the second."""
         ),
     ).tag(config=True)
 
     monoDecTol = tr.Float(
         default_value=1.1,
-        help=r"""Tolerance parameter for monotonic decrease.
+        help=r"""Tolerance parameter for monotonic decrease (default is 1.1).
 
 Correction is applied only if: ``C[i,j] > C[i-1,j] * unimodTol`` .""",
     ).tag(config=True)
@@ -191,32 +205,22 @@ Correction is applied only if: ``C[i,j] > C[i-1,j] * unimodTol`` .""",
         help=(
             r"""Monotonic increase constraint on concentrations.
 
-- ``[]``\ : no constraint is applied.
+- ``[]``\ (default): no constraint is applied.
 - `list` of indexes: the corresponding profiles are considered to increase
   monotonically, not the others. For instance ``[0, 2]`` indicates that profile ``#0``
-  and ``#2`` are increasing while profile ``#1`` *can* decrease."""
+  and ``#2`` are increasing while profile ``#1`` *can* decrease.
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding
+  profiles are considered monotonic, not the others. For instance ``[(0, 2), (1)]``
+  indicates that 2 profiles are considered monotonic in the first block and only one in
+  the second"""
         ),
     ).tag(config=True)
 
     monoIncTol = tr.Float(
         default_value=1.1,
-        help="""Tolerance parameter for monotonic decrease.
+        help="""Tolerance parameter for monotonic decrease (default is 1.1).
 
 Correction is applied only if ``C[i,j] < C[i-1,j] * unimodTol`` along profile ``#j``\ .""",
-    ).tag(config=True)
-
-    unimodConc = tr.Union(
-        (tr.Enum(["all"]), tr.List()),
-        default_value="all",
-        help=(
-            r"""Unimodality constraint on concentrations.
-
-- ``'all'``\ : all concentrations profiles are considered unimodal.
-- `list` of indexes: the corresponding profiles are considered unimodal, not the others.
-  For instance ``[0, 2]`` indicates that profile ``#0`` and ``#2`` are unimodal while
-  profile ``#1`` *can* be multimodal.
-- ``[]``\ : all profiles can be multimodal."""
-        ),
     ).tag(config=True)
 
     closureConc = tr.Union(
@@ -225,16 +229,20 @@ Correction is applied only if ``C[i,j] < C[i-1,j] * unimodTol`` along profile ``
         help=(
             r"""Defines the concentration profiles subjected to closure constraint.
 
-- ``[]``\ : no constraint is applied.
+- ``[]``\ (default): no constraint is applied.
 - ``'all'``\ : all profile are constrained so that their weighted sum equals the
   `closureTarget`
 - `list` of indexes: the corresponding profiles are constrained so that their weighted sum
-  equals `closureTarget`\ ."""
+  equals `closureTarget`\ .
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding
+  profiles are considered for closure constraint, not the others. For instance ``[(0, 2), (1)]``
+  indicates that 2 profiles are considered monotonic in the first block and only one in
+  the second"""
         ),
     ).tag(config=True)
 
     closureTarget = tr.Union(
-        (tr.Enum(["default"]), Array()),
+        (tr.Enum(["default"]), Array(), tr.List()),
         default_value="default",
         help=(
             r"""The value of the sum of concentrations profiles subjected to closure.
@@ -242,7 +250,10 @@ Correction is applied only if ``C[i,j] < C[i-1,j] * unimodTol`` along profile ``
 - ``'default'``\ : the total concentration is set to ``1.0`` for all observations.
 - :term:`array-like` of size :term:`n_observations`: the values of concentration for
   each observation. Hence, ``np.ones(X.shape[0])`` would be equivalent to
-  ``'default'``\ ."""
+  ``'default'``\ .
+- `list` of :term:`array-like`: in case of multiblock data, the corresponding
+  concentration targets.
+"""
         ),
     ).tag(config=True)
 
@@ -252,7 +263,7 @@ Correction is applied only if ``C[i,j] < C[i-1,j] * unimodTol`` along profile ``
         help=(
             r"""The method used to enforce :term:`closure` (:cite:t:`omidikia:2018`).
 
-- ``'scaling'`` recompute the concentration profiles using least squares:
+- ``'scaling'`` (default) recompute the concentration profiles using least squares:
 
   .. math::
 
@@ -270,8 +281,10 @@ Correction is applied only if ``C[i,j] < C[i-1,j] * unimodTol`` along profile ``
         help=(
             r"""Defines hard constraints on the concentration profiles.
 
-- ``[]``\ : no constraint is applied.
-- `list` of indexes: the corresponding profiles will set by `getConc`\ ."""
+- ``[]``\ (default): no constraint is applied.
+- `list` of indexes: the corresponding profiles will set by `getConc`\ .
+- `list`of lists or tuples of indexes: in case of multiblock data, the corresponding
+  profiles will be set."""
         ),
     ).tag(config=True)
 
@@ -295,7 +308,7 @@ with:
 - ``Ccurr`` is the current `C` dataset,
 - ``argsGetConc`` are the parameters needed to completely specify the function.
 - ``hardC`` is a `~numpy.ndarray` or `NDDataset` of shape
-  (:term:`n_observations` , len(``hardConc``\ ),
+  (:term:`n_observations` , len(``hardConc``\ ), or a list of such arrays or NDDatasets.
 - ``newArgsGetConc`` are the updated parameters for the next iteration (can be `None`),
 - ``extraOutputGetConc`` can be any other relevant output to be kept in
   ``extraOutputGetConc`` attribute, a list of ``extraOutputGetConc`` at each MCR ALS
@@ -340,7 +353,7 @@ and `C[:,hardConc]`\ .
         help=(
             r"""Solver used to get `St` from `X` and `C`\ .
 
-- ``'lstsq'``\ : uses ordinary least squares with `~numpy.linalg.lstsq`
+- ``'lstsq'``\ (default): uses ordinary least squares with `~numpy.linalg.lstsq` (default)
 - ``'nnls'``\ : non-negative least squares (`~scipy.optimize.nnls`\ ) are applied
   sequentially on all profiles
 - ``'pnnls'``\ : non-negative least squares (`~scipy.optimize.nnls`\ ) are applied on
@@ -354,7 +367,7 @@ and `C[:,hardConc]`\ .
         help=(
             r"""Non-negativity constraint on spectra.
 
-- ``'all'``\ : all profiles are considered non-negative.
+- ``'all'``\ (default): all profiles are considered non-negative (default).
 - `list` of indexes : the corresponding profiles are considered non-negative, not the
   others. For instance ``[0, 2]`` indicates that profile ``#0`` and ``#2`` are
   non-negative while profile ``#1`` *can* be negative.
@@ -368,7 +381,7 @@ and `C[:,hardConc]`\ .
         help=(
             r"""Defines whether the spectral profiles should be normalized.
 
-- `None`\ : no normalization is applied.
+- `None`\ (default): no normalization is applied.
 - ``'euclid'``\ : spectra are normalized with respect to their total area,
 - ``'max'``\ : spectra are normalized with respect to their maximum value."""
         ),
@@ -380,7 +393,7 @@ and `C[:,hardConc]`\ .
         help=(
             r"""Unimodality constraint on Spectra.
 
-- ``[]``\ : all profiles can be multimodal.
+- ``[]``\ (default): all profiles can be multimodal.
 - ``'all'``\ : all profiles are unimodal (equivalent to ``range(n_components)``\ ).
 - array of indexes : the corresponding profiles are considered unimodal, not the others.
   For instance ``[0, 2]`` indicates that profile ``#0`` and ``#2`` are unimodal while
@@ -404,7 +417,7 @@ and `C[:,hardConc]`\ .
     unimodSpecTol = tr.Float(
         default_value=1.1,
         help=(
-            r"""Tolerance parameter for unimodality.
+            r"""Tolerance parameter for unimodality (default is 1.1)
 
 Correction is applied only if the deviating point ``St[j, i]`` is larger than
 ``St[j, i-1] * unimodSpecTol`` on the decreasing branch of profile
@@ -418,7 +431,7 @@ profile  ``#j``\ ."""
         help=(
             r"""Defines hard constraints on the spectral profiles.
 
-- ``[]``\ : no constraint is applied.
+- ``[]``\ (default): no constraint is applied.
 - `list` of indexes : the corresponding profiles will set by `getSpec`\ ."""
         ),
     ).tag(config=True)
@@ -428,7 +441,7 @@ profile  ``#j``\ ."""
         default_value=None,
         allow_none=True,
         help=(
-            r"""An external function that will provide ``len(hardSpec)`` concentration
+            r"""An external function that will provide ``len(hardSpec)`` spectral
 profiles.
 
 It should be using one of the following syntax:
@@ -551,19 +564,19 @@ and `St`.
 
     def _solve_C(self, St):
         if self.solverConc == "lstsq":
-            return _lstsq(St.T, self._X.data.T).T
+            return _lstsq(St.T, self._X_preprocessed.T).T
         elif self.solverConc == "nnls":
-            return _nnls(St.T, self._X.data.T).T
+            return _nnls(St.T, self._X_preprocessed.T).T
         elif self.solverConc == "pnnls":
-            return _pnnls(St.T, self._X.data.T, nonneg=self.nonnegConc).T
+            return _pnnls(St.T, self._X_preprocessed.T, nonneg=self.nonnegConc).T
 
     def _solve_St(self, C):
         if self.solverSpec == "lstsq":
-            return _lstsq(C, self._X.data)
+            return _lstsq(C, self._X_preprocessed)
         elif self.solverSpec == "nnls":
-            return _nnls(C, self._X.data)
+            return _nnls(C, self._X_preprocessed)
         elif self.solverSpec == "pnnls":
-            return _pnnls(C, self._X.data, nonneg=self.nonnegSpec)
+            return _pnnls(C, self._X_preprocessed, nonneg=self.nonnegSpec)
 
     def _guess_profile(self, profile):
         # Set or guess an initial profile.
@@ -572,55 +585,125 @@ and `St`.
             return
 
         # check the dimensions compatibility
-        # As the dimension of profile should match the initial shape
-        # of X we use self._X_shape not self._X.shape (because for this masked columns
-        # or rows have already been removed.
-        if (self._X_shape[1] != profile.shape[1]) and (
-            self._X_shape[0] != profile.shape[0]
-        ):
-            raise ValueError(
-                f"None of the dimensions of the given profile "
-                f"[{profile.shape}] correspond to any of those "
-                f"of X [{self._X_shape}]."
-            )
+        #
+        # when a list of profiles is given (augmented data), we check they have a
+        # compatible shape with the data
+        if self._multiblock and self._concatenation_axis in (0, 1):
+            other_axis = abs(self._concatenation_axis - 1)
+            if isinstance(profile, (list, tuple)):
+                # a list of concentration or spectral profiles is given
+                if len(profile) != len(self._X):
+                    raise ValueError(
+                        f"The number of given profiles ({len(profile)}) does not "
+                        f"match the number of datasets ({len(self._X)}) "
+                    )
 
-        # mask info
-        if np.any(self._X_mask):
-            masked_rows, masked_columns = self._get_masked_rc(self._X_mask)
+                # check the shape of the profiles
+                if not all(
+                    [
+                        p.shape[other_axis] == profile[0].shape[other_axis]
+                        for p in profile
+                    ]
+                ):
+                    raise ValueError(
+                        f"The dimension of the given profiles along the axis {other_axis} "
+                        f"should be the same as that of the input datasets: {self._X_preprocessed.shape[other_axis]}"
+                    )
+                elif (
+                    sum([p.shape[self._concatenation_axis] for p in profile])
+                    != self._X_preprocessed.shape[self._concatenation_axis]
+                ):
+                    raise ValueError(
+                        f"The sum of the dimensions of the given profiles along axis {self._concatenation_axis} is "
+                        f"{sum([p.shape[self._concatenation_axis] for p in profile])}, but the corresponding "
+                        f"dimension of X is {self._X_shape[self._concatenation_axis ]}"
+                    )
 
-        # make the profile
-        if profile.shape[0] == self._X_shape[0]:
-            # this should be a concentration profile.
-            C = profile.copy()
-            self._n_components = C.shape[1]
-            info_(
-                f"Concentration profile initialized with {self._n_components} components"
-            )
+                # concatenate the profiles
+                if self._concatenation_axis == 0:
+                    C = concatenate(*profile, axis=0)
+                    self._n_components = C.shape[1]
+                    St = self._solve_St(C)
+                else:
+                    St = concatenate(*profile, axis=1)
+                    self._n_components = St.shape[0]
+                    C = self._solve_C(St)
 
-            # compute initial spectra (using X eventually masked)
-            St = self._solve_St(C)
-            info_("Initial spectra profile computed")
-            # if everything went well here, C and St are set, we return
-            # after having removed the eventual C mask!
+            else:
+                # a single profile is given
+                if profile.shape[other_axis] != self._X_preprocessed.shape[other_axis]:
+                    raise ValueError(
+                        f"The dimension of the given profile along the axis {other_axis} "
+                        f"should be the same as that of the input datasets: {self._X_preprocessed.shape[other_axis]}"
+                    )
+
+                if self._concatenation_axis == 1:
+                    C = profile.copy()
+                    self._n_components = C.shape[1]
+                    St = self._solve_St(C)
+                    info_("Initial spectra profile computed")
+                else:
+                    St = profile.copy()
+                    self._n_components = St.shape[0]
+                    C = self._solve_C(St)
+                    info_("Initial concentration profile computed")
+
+        elif self._multiblock and self.concatenation_axis == 2:
+            # todo: implement this case
+            pass
+
+        else:  # a single dataset X is given
+
+            # As the dimension of profile should match the initial shape
+            # of X we use self._X_shape not self._X.shape (because for this masked columns
+            # or rows have already been removed.
+            if (self._X_shape[1] != profile.shape[1]) and (
+                self._X_shape[0] != profile.shape[0]
+            ):
+                raise ValueError(
+                    f"None of the dimensions of the given profile(s) "
+                    f"[{profile.shape}] correspond to any of those "
+                    f"of X [{self._X_shape}]."
+                )
+
+            # mask info
             if np.any(self._X_mask):
-                C = C[~masked_rows]
-            return C, St
+                masked_rows, masked_columns = self._get_masked_rc(self._X_mask)
 
-        else:  # necessarily: profile.shape[1] == profile.shape[0]
-            St = profile.copy()
-            self._n_components = St.shape[0]
-            info_(f"Spectra profile initialized with {self._n_components} components")
+            # make the profile
+            if profile.shape[0] == self._X_shape[0]:
+                # this should be a concentration profile.
+                C = profile.copy()
+                self._n_components = C.shape[1]
+                info_(
+                    f"Concentration profile initialized with {self._n_components} components"
+                )
 
-            # compute initial spectra
-            C = self._solve_C(St)
-            info_("Initial concentration profile computed")
-            # if everything went well here, C and St are set, we return
-            # after having removed the eventual St mask!
-            if np.any(self._X_mask):
-                St = St[:, ~masked_columns]
-            # update the number of components
+                # compute initial spectra (using X eventually masked)
+                St = self._solve_St(C)
+                info_("Initial spectra profile computed")
+                # if everything went well here, C and St are set, we return
+                # after having removed the eventual C mask!
+                if np.any(self._X_mask):
+                    C = C[~masked_rows]
+                return C, St
 
-            return C, St
+            else:  # necessarily: profile.shape[1] == profile.shape[0]
+                St = profile.copy()
+                self._n_components = St.shape[0]
+                info_(
+                    f"Spectra profile initialized with {self._n_components} components"
+                )
+
+                # compute initial spectra
+                C = self._solve_C(St)
+                info_("Initial concentration profile computed")
+                # if everything went well here, C and St are set, we return
+                # after having removed the eventual St mask!
+                if np.any(self._X_mask):
+                    St = St[:, ~masked_columns]
+
+        return C, St
 
     @_wrap_ndarray_output_to_nddataset(units=None, title=None, typex="components")
     def _C_2_NDDataset(self, C):
@@ -643,11 +726,14 @@ and `St`.
     # ----------------------------------------------------------------------------------
     @tr.validate("nonnegConc")
     def _validate_nonnegConc(self, proposal):
+
         if self._X_is_missing:
             return proposal.value
         nonnegConc = proposal.value
+
         if not self._n_components:  # not initialized or 0
             return nonnegConc
+
         if nonnegConc == "all":
             nonnegConc = np.arange(
                 self._n_components
@@ -666,71 +752,177 @@ and `St`.
 
     @tr.validate("unimodConc")
     def _validate_unimodConc(self, proposal):
+
         if self._X_is_missing:
             return proposal.value
         unimodConc = proposal.value
+
         if not self._n_components:  # not initialized or 0
             return unimodConc
+
         if unimodConc == "all":
             unimodConc = np.arange(self._n_components).tolist()
-        elif np.any(unimodConc) and (
-            len(unimodConc) > self._n_components
-            or max(unimodConc) + 1 > self._n_components
-        ):
-            raise ValueError(
-                f"The profile has only {self._n_components} species, please check the "
-                f"`unimodConc` configuration (value:{unimodConc})"
-            )
+
+        # At this point we have either one list of indexes or a list of lists of indexes
+        # if single list of indexes
+        if all(isinstance(unimodConc[i], int) for i in range(len(unimodConc))):
+            unimodConc = [unimodConc]
+            if self._multiblock and self._concatenation_axis == 0:
+                # we have to repeat the list as many times as there are
+                # datasets in X
+                unimodConc = np.repeat(unimodConc, len(self._X)).tolist()
+        else:  # a list of lists, check that the number of lists is correct
+            if len(unimodConc) != len(self._X):
+                raise ValueError(
+                    f"Multiblock dataset: the number of given unimodality constraints "
+                    f"({len(unimodConc)}) does not match the number of datasets "
+                    f"({len(self._X)}) "
+                )
+        # finally check that the number of indexes in each list is correct
+        for _unimodConc in unimodConc:
+            if len(_unimodConc) > self._n_components:
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check "
+                    f"the `unimodConc` configuration (value:{unimodConc})"
+                )
+            elif np.any(_unimodConc) and (
+                len(_unimodConc) > self._n_components
+                or max(_unimodConc) + 1 > self._n_components
+            ):
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check the "
+                    f"`unimodConc` configuration (value:{_unimodConc})"
+                )
         return unimodConc
 
     @tr.validate("closureConc")
     def _validate_closureConc(self, proposal):
+
         if self._X_is_missing:
             return proposal.value
+
         closureConc = proposal.value
+
         if closureConc == "all":
             closureConc = np.arange(self._n_components)
-        elif len(closureConc) > self._n_components:
-            raise ValueError(
-                f"The model contains only {self._n_components} components, please check "
-                f"the 'closureConc' configuration (value:{closureConc})"
-            )
+
+        # At this point we have either one list of indexes or a list of lists of indexes
+        # if single list of indexes
+        if all(isinstance(closureConc[i], int) for i in range(len(closureConc))):
+            closureConc = [closureConc]
+            if self._multiblock and self._concatenation_axis == 0:
+                # we have to repeat the list as many times as there are
+                # datasets in X
+                closureConc = np.repeat(closureConc, len(self._X)).tolist()
+        else:  # a list of lists, check that the number of lists is correct
+            if len(closureConc) != len(self._X):
+                raise ValueError(
+                    f"Multiblock dataset: the number of given closure constraints "
+                    f"({len(closureConc)}) does not match the number of datasets "
+                    f"({len(self._X)}) "
+                )
+        # check that the number of indexes in each list is correct
+        for _closureConc in closureConc:
+            if len(_closureConc) > self._n_components:
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check "
+                    f"the `closureConc` configuration (value:{closureConc})"
+                )
+            elif np.any(_closureConc) and (
+                len(_closureConc) > self._n_components
+                or max(_closureConc) + 1 > self._n_components
+            ):
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check the "
+                    f"`closureConc` configuration (value:{closureConc})"
+                )
         return closureConc
 
     @tr.validate("closureTarget")
     def _validate_closureTarget(self, proposal):
+
         if self._X_is_missing:
             return proposal.value
+
         closureTarget = proposal.value
-        ny = self.X.shape[0]
+
         if isinstance(closureTarget, str):
             if closureTarget == "default":
-                closureTarget = np.ones(ny)
-        elif len(closureTarget) != ny:
-            raise ValueError(
-                f"The data contain only {ny} observations, please check "
-                f"the 'closureTarget' configuration (value:{closureTarget})"
-            )
+                closureTarget = np.ones(self._X_preprocessed.shape[0]).tolist()
+
+        # At this point we have either one array of indexes or a list of arrays
+        # if single list of indexes
+        if all(
+            isinstance(closureTarget[i], (int, float))
+            for i in range(len(closureTarget))
+        ):
+            closureTarget = [closureTarget]
+            if self._multiblock and self._concatenation_axis == 0:
+                # we have to repeat the array as many times as there are
+                # datasets in X
+                closureTarget = np.repeat(closureTarget, len(self._X)).tolist()
+        else:  # a list of arrays, check that the number of arrays is correct
+            if len(closureTarget) != len(self._X):
+                raise ValueError(
+                    f"Multiblock dataset: the number of given closure targets "
+                    f"({len(closureTarget)}) does not match the number of datasets "
+                    f"({len(self._X)}) "
+                )
+        # check that the number of indexes in each list is correct
+        for _closureTarget in closureTarget:
+            if len(_closureTarget) != self._X_preprocessed.shape[0]:
+                raise ValueError(
+                    f"The data contain {self._X_preprocessed.shape[0]} observations, "
+                    f"please check the 'closureTarget' configuration "
+                    f"(value:{closureTarget})"
+                )
         return closureTarget
 
     @tr.validate("getC_to_C_idx")
     def _validate_getC_to_C_idx(self, proposal):
+
         if self._X_is_missing:
             return proposal.value
         getC_to_C_idx = proposal.value
+
         if not self._n_components:  # not initialized or 0
             return getC_to_C_idx
+
         if getC_to_C_idx == "default":
             getC_to_C_idx = np.arange(self._n_components).tolist()
-        elif (
-            len(getC_to_C_idx)
-            > self._n_components
-            #   or max(getC_to_C_idx) + 1 > self._n_components
-        ):
-            raise ValueError(
-                f"The profile has only {self._n_components} species, please check "
-                f"the `getC_to_C_idx`  configuration (value:{getC_to_C_idx})"
-            )
+
+        # At this point we have either one list of indexes or a list of lists of indexes
+        # if single list of indexes
+        if all(isinstance(getC_to_C_idx[i], int) for i in range(len(getC_to_C_idx))):
+            getC_to_C_idx = [getC_to_C_idx]
+            if self._multiblock and self._concatenation_axis == 0:
+                # we have to repeat the list as many times as there are
+                # datasets in X
+                # closureConc = np.repeat(getC_to_C_idx, len(self._X)).tolist()
+                pass
+        else:  # a list of lists, check that the number of lists is correct
+            if len(getC_to_C_idx) != len(self._X):
+                raise ValueError(
+                    f"Multiblock dataset: the number of lists of indexes in "
+                    f"`getC_to_C_idx` is ({len(getC_to_C_idx)}) and does not match the "
+                    f"number of datasets ({len(self._X)}) "
+                )
+        # check that the number of indexes in each list is correct
+        for _getC_to_C_idx in getC_to_C_idx:
+            if len(_getC_to_C_idx) > self._n_components:
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check "
+                    f"the `getC_to_C_idx` configuration (value:{getC_to_C_idx})"
+                )
+            elif np.any(_getC_to_C_idx) and (
+                len(_getC_to_C_idx) > self._n_components
+                or max(_getC_to_C_idx) + 1 > self._n_components
+            ):
+                raise ValueError(
+                    f"The profile has only {self._n_components} species, please check the "
+                    f"`getC_to_C_idx` configuration (value:{getC_to_C_idx})"
+                )
+
         return getC_to_C_idx
 
     @tr.validate("nonnegSpec")
@@ -800,7 +992,7 @@ and `St`.
             # Here is an ugly trick to force this validation. # TODO: better way?
             with warnings.catch_warnings():
                 warnings.simplefilter(action="ignore", category=FutureWarning)
-                self.closureTarget = self.closureTarget
+
                 self.getC_to_C_idx = self.getC_to_C_idx
                 self.getSt_to_St_idx = self.getSt_to_St_idx
                 self.nonnegConc = self.nonnegConc
@@ -808,6 +1000,7 @@ and `St`.
                 self.unimodConc = self.unimodConc
                 self.unimodSpec = self.unimodSpec
                 self.closureConc = self.closureConc
+                self.closureTarget = self.closureTarget
 
     @tr.default("_components")
     def _components_default(self):
@@ -826,8 +1019,9 @@ and `St`.
     def _preprocess_as_Y_changed(self, change):
         # should be a tuple of profiles or only concentrations/spectra profiles
         profiles = change.new
-        if isinstance(profiles, (list, tuple)):
-            # we assume that the starting C and St are already computed
+
+        if isinstance(profiles, (list, tuple)) and self._Y_preprocessed != []:
+            # the starting C and St are already computed
             # (for ex. from a previous run of fit)
             C, St = [item.data for item in profiles]
             self._n_components = C.shape[1]
@@ -838,10 +1032,11 @@ and `St`.
                 C = C[~masked_rows]
         else:
             # not passed explicitly, try to guess.
-            C, St = self._guess_profile(profiles.data)
+            C, St = self._guess_profile(profiles)
 
         # we do a last validation
-        shape = self._X.shape
+        shape = self._X_preprocessed.shape
+
         if shape[0] != C.shape[0]:
             # An error will be raised before if X is None.
             raise ValueError("The dimensions of C do not match those of X.")
@@ -852,12 +1047,11 @@ and `St`.
         # (with mask removed to fit the size of the _X data)
         self._Y_preprocessed = (C, St)
 
-    def _fit(self, X, Y):
+    def _fit(self, X, Y, axis=0):
         # this method is called by the abstract class fit.
         # Input X is a np.ndarray
         # Y is a tuple of guessed profiles (each of them being np.ndarray)
-        # So every computation below implies only numpy arrays, not NDDataset
-        # as in previous versions
+        # So every computation below implies only numpy arrays.
 
         C, St = Y
         ny, _ = X.shape
@@ -876,84 +1070,111 @@ and `St`.
         Xtransf = pca.fit_transform(X)
         Xpca = pca.inverse_transform(Xtransf)
 
+        # in case of multiblock, we will need to split C and/or St and possibly use
+        # block-specific constraints.
+        if self._multiblock and self._concatenation_axis == 0:
+            # determine where C should be split
+            C_split_indices = [x.shape[0] for x in X][:-1]
+            for i, idx in enumerate(C_split_indices):
+                C_split_indices[i] += C_split_indices[i - 1] if i > 0 else 0
+
+            # non-negativity constraints are not assumed to be -block-specific
+
+            # unimodality constraints are block-specific if a list of list of indexes is
+            # provided
+            if np.any(self.unimodConc):
+                ...
+
+        # now start the ALS loop
         while change >= self.tol and niter < self.max_iter and ndiv < self.maxdiv:
             niter += 1
 
-            # Compute C
-            # ------------------------------------------
-            C = self._solve_C(St)
+            # CONCENTRATION MATRIX
+            # --------------------
+            C = self._solve_C(St) if niter > 1 else C
 
-            # Force non-negative concentration
-            # ------------------------------------------
-            if np.any(self.nonnegConc):
-                C[:, self.nonnegConc] = C[:, self.nonnegConc].clip(min=0)
+            if self._multiblock and self._concatenation_axis == 0:
+                C_list = np.split(C, C_split_indices, axis=0)
+            else:
+                C_list = [C]
 
-            # Force unimodal concentration
-            # ------------------------------------------
-            if np.any(self.unimodConc):
-                C = _unimodal_2D(
-                    C,
-                    idxes=self.unimodConc,
-                    axis=0,
-                    tol=self.unimodConcTol,
-                    mod=self.unimodConcMod,
-                )
+            for i, C in enumerate(C_list):
 
-            # Force monotonic increase
-            # ------------------------------------------
-            if np.any(self.monoIncConc):
-                for s in self.monoIncConc:
-                    for curid in np.arange(ny - 1):
-                        if C[curid + 1, s] < C[curid, s] / self.monoIncTol:
-                            C[curid + 1, s] = C[curid, s]
+                # Force non-negative concentration
+                # ------------------------------------------
+                if np.any(self.nonnegConc):
+                    C[:, self.nonnegConc] = C[:, self.nonnegConc].clip(min=0)
 
-            # Force monotonic decrease
-            # ------------------------------------------
-            if np.any(self.monoDecConc):
-                for s in self.monoDecConc:
-                    for curid in np.arange(ny - 1):
-                        if C[curid + 1, s] > C[curid, s] * self.monoDecTol:
-                            C[curid + 1, s] = C[curid, s]
-
-            # Closure
-            # ------------------------------------------
-            if self.closureConc:
-                if self.closureMethod == "scaling":
-                    Q = _lstsq(C[:, self.closureConc], self.closureTarget.T)
-                    C[:, self.closureConc] = np.dot(C[:, self.closureConc], np.diag(Q))
-                elif self.closureMethod == "constantSum":
-                    totalConc = np.sum(C[:, self.closureConc], axis=1)
-                    C[:, self.closureConc] = (
-                        C[:, self.closureConc]
-                        * self.closureTarget[:, None]
-                        / totalConc[:, None]
+                # Force unimodal concentration
+                # ------------------------------------------
+                if np.any(self.unimodConc):
+                    C = _unimodal_2D(
+                        C,
+                        idxes=self.unimodConc,
+                        axis=0,
+                        tol=self.unimodConcTol,
+                        mod=self.unimodConcMod,
                     )
 
-            # external concentration profiles
-            # ------------------------------------------
-            extraOutputGetConc = []
-            if np.any(self.hardConc):
-                _C = self._C_2_NDDataset(C)
-                if self.kwargsGetConc != {} and self.argsGetConc != ():
-                    output = self.getConc(_C, *self.argsGetConc, **self.kwargsGetConc)
-                elif self.kwargsGetConc == {} and self.argsGetConc != ():
-                    output = self.getConc(_C, *self.argsGetConc)
-                elif self.kwargsGetConc != {} and self.argsGetConc == ():
-                    output = self.getConc(_C, **self.kwargsGetConc)
-                else:
-                    output = self.getConc(_C)
+                # Force monotonic increase
+                # ------------------------------------------
+                if np.any(self.monoIncConc):
+                    for s in self.monoIncConc:
+                        for curid in np.arange(ny - 1):
+                            if C[curid + 1, s] < C[curid, s] / self.monoIncTol:
+                                C[curid + 1, s] = C[curid, s]
 
-                if isinstance(output, tuple):
-                    fixedC = output[0]
-                    self.argsGetConc = output[1]
-                    if len(output) == 3:
-                        extraOutputGetConc.append(output[2])
+                # Force monotonic decrease
+                # ------------------------------------------
+                if np.any(self.monoDecConc):
+                    for s in self.monoDecConc:
+                        for curid in np.arange(ny - 1):
+                            if C[curid + 1, s] > C[curid, s] * self.monoDecTol:
+                                C[curid + 1, s] = C[curid, s]
+
+                # Closure
+                # ------------------------------------------
+                if self.closureConc:
+                    if self.closureMethod == "scaling":
+                        Q = _lstsq(C[:, self.closureConc], self.closureTarget.T)
+                        C[:, self.closureConc] = np.dot(
+                            C[:, self.closureConc], np.diag(Q)
+                        )
+                    elif self.closureMethod == "constantSum":
+                        totalConc = np.sum(C[:, self.closureConc], axis=1)
+                        C[:, self.closureConc] = (
+                            C[:, self.closureConc]
+                            * self.closureTarget[:, None]
+                            / totalConc[:, None]
+                        )
+
+                # external concentration profiles
+                # ------------------------------------------
+                extraOutputGetConc = []
+                if np.any(self.hardConc):
+                    _C = self._C_2_NDDataset(C)
+                    if self.kwargsGetConc != {} and self.argsGetConc != ():
+                        output = self.getConc(
+                            _C, *self.argsGetConc, **self.kwargsGetConc
+                        )
+                    elif self.kwargsGetConc == {} and self.argsGetConc != ():
+                        output = self.getConc(_C, *self.argsGetConc)
+                    elif self.kwargsGetConc != {} and self.argsGetConc == ():
+                        output = self.getConc(_C, **self.kwargsGetConc)
+                    else:
+                        output = self.getConc(_C)
+
+                    if isinstance(output, tuple):
+                        fixedC = output[0]
+                        self.argsGetConc = output[1]
+                        if len(output) == 3:
+                            extraOutputGetConc.append(output[2])
+                        else:
+                            fixedC = output
                     else:
                         fixedC = output
-                else:
-                    fixedC = output
 
-                C[:, self.hardConc] = fixedC[:, self.getC_to_C_idx]
+                    C[:, self.hardConc] = fixedC[:, self.getC_to_C_idx]
 
             # stores C in C_constrained
             # ------------------------------------------
@@ -1090,7 +1311,7 @@ and `St`.
     # Public methods and properties
     # ----------------------------------------------------------------------------------
     @_docstring.dedent
-    def fit(self, X, Y):
+    def fit(self, X, Y, concatenation_axis=0):
         """
         Fit the MCRALS model on an X dataset using initial concentration or spectra.
 
@@ -1099,7 +1320,8 @@ and `St`.
         %(analysis_fit.parameters.X)s
         Y : :term:`array-like` or list of :term:`array-like`
             Initial concentration or spectra.
-
+        concatenation_axis : int, optional
+            Axis along which the concatenation is carried out. Default is 0.
         Returns
         -------
         %(analysis_fit.returns)s
@@ -1108,6 +1330,7 @@ and `St`.
         --------
         %(analysis_fit.see_also)s
         """
+        self._concatenation_axis = concatenation_axis
         return super().fit(X, Y)
 
     @_docstring.dedent
@@ -1160,7 +1383,16 @@ and `St`.
         The final concentration profiles.
         """
         C = self.transform()
-        C.name = "Pure concentration profile, mcs-als of " + self.X.name
+        if self._multiblock:
+            X_name = ", ".join([x.name for x in self.X])
+            if isinstance(C, tuple):
+                for c, x in zip(C, self.X):
+                    c.name = f"MCR-ALS concentration profile of {x.name}"
+            else:
+                C.name = f"MCA-ALS concentration profile of {X_name}"
+        else:
+            C.name = f"Pure concentration profile, mcr-als of {self.X.name}"
+
         return C
 
     @property
@@ -1169,7 +1401,15 @@ and `St`.
         The final spectra profiles.
         """
         St = self.components
-        St.name = "Pure spectra profile, mcs-als of " + self.X.name
+        if self._multiblock:
+            X_name = ", ".join([x.name for x in self.X])
+            if isinstance(St, tuple):
+                for st, x in zip(St, self.X):
+                    st.name = f"MCR-ALS spectral profiles of {x.name}"
+            else:
+                St.name = f"MCR-ALS spectral profiles of {X_name}"
+        else:
+            St.name = f"MCR-ALS spectral profiles of {self.X.name}"
         return St
 
     @property
