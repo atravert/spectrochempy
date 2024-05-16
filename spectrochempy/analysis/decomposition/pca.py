@@ -36,7 +36,7 @@ class PCA(DecompositionAnalysis):
 
     __doc__ = _docstring.dedent(
         """
-    Principal Component Anamysis (PCA).
+    Principal Component Analysis (PCA).
 
     The Principal Component Analysis analysis is using the
     `sklearn.decomposition.PCA` model.
