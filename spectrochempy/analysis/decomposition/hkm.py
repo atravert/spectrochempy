@@ -5,7 +5,7 @@
 # See full LICENSE agreement in the root directory.
 # ======================================================================================
 """
-Implementation of Principal Component Analysis (using scikit-learn library)
+Implementation of HArd Kinetic Modeling
 """
 
 import traitlets as tr
@@ -14,22 +14,22 @@ from spectrochempy.analysis._base._analysisbase import DecompositionAnalysis
 from spectrochempy.utils.decorators import signature_has_configurable_traits
 from spectrochempy.utils.docstrings import _docstring
 
-__all__ = ["MCRHKM"]
-__configurables__ = ["MCRHKM"]
+__all__ = ["HKM"]
+__configurables__ = ["HKM"]
 
 
 # ======================================================================================
 # class MCRHKM
 # ======================================================================================
 @signature_has_configurable_traits
-class MCRHKM(DecompositionAnalysis):
-    _docstring.delete_params("DecompositionAnalysis.see_also", "MCRHKM")
+class HKM(DecompositionAnalysis):
+    _docstring.delete_params("DecompositionAnalysis.see_also", "HKM")
 
     __doc__ = _docstring.dedent(
         """
-    Multivariate Curve Resolution with Hard Kinetic Modeling (MCRHKM).
+    Multivariate Curve Resolution with Hard Kinetic Modeling (HKM).
 
-    Multivariate Curve Resolution based on truncated SVD and kintic models.
+    Multivariate Curve Resolution based on PCA and kinetic models.
 
     Parameters
     ----------
@@ -89,3 +89,5 @@ class MCRHKM(DecompositionAnalysis):
         0.1,
         help=("Weight of kinetic fit. If set < -0.5, no constraint is applied"),
     ).tag(config=True)
+
+    kineticModel = tr.Enum()
