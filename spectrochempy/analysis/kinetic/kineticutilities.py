@@ -425,7 +425,7 @@ class ActionMassKinetics(tr.HasTraits):
                                 jac += (
                                     f" * C[{jj}]**{nu}"
                                     if jj != j
-                                    else f" * {nu} * C[{jj}]**{nu-1}"
+                                    else f" * {nu} * C[{jj}]**{nu - 1}"
                                 )
                 if is_null:
                     jac += "0,"
@@ -594,7 +594,8 @@ class ActionMassKinetics(tr.HasTraits):
                 # t1 = time.time()
 
                 exec(
-                    f"def f_(self, k_grid, k_dt, t, C): k = k_grid[int(t/k_dt)] ; return self._BmAt @ {self._reaction_rates}",
+                    f"def f_(self, k_grid, k_dt, t, C): k = k_grid[int(t/k_dt)] "
+                    f"; return self._BmAt @ {self._reaction_rates}",  # noqa: E702
                     global_env,
                     locals_env,
                 )
@@ -602,7 +603,8 @@ class ActionMassKinetics(tr.HasTraits):
                 if use_jac:
                     # define jac_ = d[dC/dt]/dCi
                     exec(
-                        f"def jac_(self, k_grid, k_dt, t, C): k = k_grid[int(t/k_dt)] ; return{self._jacobian}",
+                        f"def jac_(self, k_grid, k_dt, t, C): k = k_grid[int(t/k_dt)] "
+                        f"; return{self._jacobian}",  # noqa: E702
                         global_env,
                         locals_env,
                     )
@@ -680,7 +682,7 @@ class ActionMassKinetics(tr.HasTraits):
                 # t2 = time.time()
 
             # uncomment for debugging (warning: debug_() multiply the exec time by 4...)
-            # from from spectrochempy.application import debug_
+            # from spectrochempy.application import debug_
             # debug_(bunch.message)
             # t4 = time.time()
 
@@ -750,7 +752,12 @@ class ActionMassKinetics(tr.HasTraits):
                     )
         else:
             for item in dict_param:
-                i_r = item.split("[")[-1].split("]")[0]
+                try:
+                    i_r = item.split("[")[-1].split("]")[0]
+                except AttributeError:
+                    raise ValueError(
+                        f"something went wrong in parsing the dict of params: {dict_param} and item: {item}"
+                    )
                 self._arrhenius[int(i_r)] = dict_param[item]
 
         if left_op is not None:
@@ -759,9 +766,10 @@ class ActionMassKinetics(tr.HasTraits):
     def fit_to_concentrations(
         self,
         Cexp,
-        iexp,
-        i2iexp,
         dict_param_to_optimize,
+        iexp=None,
+        i2iexp=None,
+        weight=None,
         ivp_solver_kwargs={},
         optimizer_kwargs={},
     ):
@@ -773,15 +781,19 @@ class ActionMassKinetics(tr.HasTraits):
         Cexp : `NDDataset` or `list` ot `tuple` of NDDatasets
             Experimental concentration profiles on which to fit the model.
             each set of concentrations can contain more concentration profiles than those to fit.
-        iexp : `int`
+        iexp : `None` (default) or list of `int`
             Indexes of experimental concentration profiles on which the model will be
-            fitted.
-        i2iexp : `int`
+            fitted. Default (None): iexp is set to np.arange(Cexp.shape[1]).
+        i2iexp : `None` or list `int`
             Correspondence between optimized (external) concentration profile and
-            experimental concentration profile.
+            experimental concentration profile. Default (None): i2iexp will be the
+            same as iexp.
         dict_param_to_optimize : `dict` or None
             rate parameters to optimize. Keys should be 'k[i].A' and 'k[i].Ea' for
             pre-exponential factor.
+        weight : list of floats or `None`
+            Weights to apply to the residuals on each concentration profile .
+            If None, all profiles are weighted equally.
         ivp_solver_kwargs : `dict`
             keyword arguments for the ode solver. Defaults are the same as for
             `~scipy.integrate.solve_ivp`\ , except for `method=LSDOA`
@@ -799,6 +811,7 @@ class ActionMassKinetics(tr.HasTraits):
             Cexp,
             iexp,
             i2iexp,
+            weight,
             dict_param_to_optimize,
             optimizer_left_op,
             ivp_solver_method,
@@ -830,7 +843,20 @@ class ActionMassKinetics(tr.HasTraits):
             if self._nset > 1:
                 Chat = np.concatenate([C for C in Chat])
 
-            return np.sum(np.square(Carray[:, iexp] - Chat[:, i2iexp]))
+            # weighted residual
+            if weight is None:
+                return np.sum(np.square(Carray[:, iexp] - Chat[:, i2iexp]))
+            else:
+                return np.sum(
+                    np.square(Carray[:, iexp] - Chat[:, i2iexp]) * np.array(weight)
+                )
+
+        # check the input
+        if iexp is None:
+            iexp = [i for i in range(Cexp.shape[1])]
+
+        if i2iexp is None:
+            i2iexp = iexp
 
         # optimizer (kw)arguments:
         # ... parameters for scipy.minimize
@@ -860,6 +886,7 @@ class ActionMassKinetics(tr.HasTraits):
                 Cexp,
                 iexp,
                 i2iexp,
+                weight,
                 dict_param_to_optimize,
                 optimizer_left_op,
                 ivp_solver_method,
@@ -868,7 +895,7 @@ class ActionMassKinetics(tr.HasTraits):
             )
             print("Optimization of the parameters.")
             print(f"         Initial parameters: {x0}")
-            print(f"         Initial function value: {init_val:f}")
+            print(f"         Initial function value: {init_val: f}")
         tic = datetime.datetime.now(datetime.timezone.utc)
 
         optim_res = minimize(
@@ -878,6 +905,7 @@ class ActionMassKinetics(tr.HasTraits):
                 Cexp,
                 iexp,
                 i2iexp,
+                weight,
                 dict_param_to_optimize,
                 optimizer_left_op,
                 ivp_solver_method,
@@ -912,7 +940,7 @@ class ActionMassKinetics(tr.HasTraits):
         for i, param in enumerate(dict_param_to_optimize):
             dict_param_to_optimize[param] = optim_res["x"][i]
 
-        return Ckin, (iexp, i2iexp, dict_param_to_optimize), optim_res
+        return Ckin, (dict_param_to_optimize,), optim_res
 
 
 # ------------------------------------------------------------------------------------
@@ -1373,13 +1401,13 @@ class PFR:
                             )
                             if gen == 1:
                                 logging.info(
-                                    f"                      Minimum SSE: {min_sse:.3e} "
+                                    f"                      Minimum SSE: {min_sse: .3e} "
                                     f"(Eval # {it_min_sse})"
                                 )
                             else:
                                 logging.info(
-                                    f"                      Minimum SSE: {min_sse:.3e} "
-                                    f"({(min_sse - prev_min_sse) / prev_min_sse:+.3%},"
+                                    f"                      Minimum SSE: {min_sse: .3e} "
+                                    f"({(min_sse - prev_min_sse) / prev_min_sse: +.3%}, "
                                     f" Eval # {it_min_sse})"
                                 )
                             logging.info(
@@ -1413,8 +1441,8 @@ class PFR:
 
                 guess_string = ""
                 for val in guess:
-                    guess_string += f"{val:.5e} "
-                logging.info(f"{it:6} | {guess_string} | {sse:.3e} ")
+                    guess_string += f"{val: .5e} "
+                logging.info(f"{it: 6} | {guess_string} | {sse: .3e} ")
 
             if options["disp"]:
                 print(
@@ -1609,9 +1637,9 @@ class PFR:
         if res.success:
             best_string = ""
             for val in res.x:
-                best_string += f"{val:.5e} "
+                best_string += f"{val: .5e} "
             logging.info(f"Optimized parameters: {best_string}")
-            logging.info(f"             Min SSE: {res.fun:.5e}")
+            logging.info(f"             Min SSE: {res.fun: .5e}")
         else:
             if popsize:
                 logging.info(
@@ -1634,7 +1662,7 @@ class PFR:
                 for trial in last_pop:
                     init_array += "["
                     for par in trial:
-                        init_array += f"{par:.5e}, "
+                        init_array += f"{par: .5e}, "
                     init_array += "],\n"
                 init_array += "])"
                 logging.info(init_array)
