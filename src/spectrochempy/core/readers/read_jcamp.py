@@ -70,6 +70,83 @@ def read_dx(*args, **kwargs):  # pragma: no cover
 # ======================================================================================
 # private functions
 # ======================================================================================
+
+
+def _parse_xydata_format(format_spec):
+    """
+    Parse XYDATA format specification to determine delimiter mode.
+
+    Parameters
+    ----------
+    format_spec : str
+        Format specification like "(X++(Y..Y))" or "(X++(Y..Y))"
+
+    Returns
+    -------
+    str
+        'pac' for PAC form (uses +/- delimiters), 'whitespace' for normal whitespace separation
+    """
+    format_upper = format_spec.upper().replace(" ", "")
+    if "++" in format_upper or "+-" in format_upper or "--" in format_upper:
+        return "pac"
+    return "whitespace"
+
+
+def _tokenize_numeric_line(line, mode="whitespace"):
+    """
+    Tokenize a JCAMP XYDATA numeric line robustly.
+
+    JCAMP-DX allows adjacent signed values without explicit delimiters in PAC form.
+    For example, "1452604-144958" should be parsed as two values: 1452604 and -144958.
+
+    Parameters
+    ----------
+    line : str
+        A line of numeric data from XYDATA section
+    mode : str
+        'pac' for PAC form (uses +/- as delimiters), 'whitespace' for normal whitespace separation
+
+    Returns
+    -------
+    list of str
+        List of numeric string tokens
+    """
+    line = line.strip()
+    if not line:
+        return []
+
+    if mode == "pac":
+        tokens = []
+        current = ""
+        i = 0
+        while i < len(line):
+            char = line[i]
+            if char in ("+", "-") and current:
+                if (
+                    current.replace(".", "")
+                    .replace("E", "")
+                    .replace("e", "")
+                    .replace("+", "")
+                    .replace("-", "")
+                    .isdigit()
+                ):
+                    tokens.append(current)
+                    current = char
+                else:
+                    current += char
+            elif char == " " or char == "\t":
+                if current:
+                    tokens.append(current)
+                    current = ""
+            else:
+                current += char
+            i += 1
+        if current:
+            tokens.append(current)
+        return tokens
+    return line.split()
+
+
 @_importer_method
 def _read_jdx(*args, **kwargs):
     # read jdx file
@@ -167,13 +244,16 @@ def _read_jdx(*args, **kwargs):
                 nx[i] = float(text)
             elif keyword == "##XYDATA":
                 # Read the intensities
+                # Determine parsing mode based on format specification
+                xydata_format = text.strip()
+                parse_mode = _parse_xydata_format(xydata_format)
                 allintensities = []
                 while keyword != "##END":
                     keyword, text = _readl(fid)
                     # for each line, get all the values except the first one (first value = wavenumber)
-                    intensities = list(filter(None, text.split(" ")[1:]))
-                    if len(intensities) > 0:
-                        allintensities += intensities
+                    tokens = _tokenize_numeric_line(text, mode=parse_mode)
+                    if len(tokens) > 1:
+                        allintensities.extend(tokens[1:])
                 spectra = np.array(
                     [allintensities],
                 )  # convert allintensities into an array
@@ -182,7 +262,7 @@ def _read_jdx(*args, **kwargs):
                 ] = "nan"  # deals with missing or out of range intensity values
                 spectra = spectra.astype(np.float32)
                 spectra *= yfactor
-                # add spectra in "data" matrix
+                # add spectra in data matrix
                 data = spectra if not data.size else np.concatenate((data, spectra), 0)
 
         # Check "firstx", "lastx" and "nx"
@@ -331,13 +411,14 @@ def _readl(fid):
     line = fid.readline()
     if not line:
         return "EOF", ""
-    line = line.strip(" \n")  # remove newline character
-    if line[0:2] == "##":  # if line starts with "##"
-        if line[0:5] == "##END":  # END KEYWORD, no text
+    line = line.rstrip("\n")  # remove trailing newline only
+    if line.startswith("##"):  # if line starts with "##"
+        if line.startswith("##END"):
             keyword = "##END"
             text = ""
-        else:  # keyword + text
-            keyword, text = line.split("=")
+        else:
+            keyword, _, text = line.partition("=")
+            text = text.strip()
     else:
         keyword = ""
         text = line.strip()

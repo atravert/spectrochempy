@@ -1826,7 +1826,6 @@ def plot_2D(dataset, method=None, **kwargs):
         if data_only:
             # if data only (we will not set axes and labels
             # it was probably done already in a previous plot
-            new._plot_resume(dataset, **kwargs)
             return ax
 
         # display a title
@@ -1988,8 +1987,6 @@ def plot_2D(dataset, method=None, **kwargs):
             ax.set_xlim(user_xlim)
         if user_ylim is not None:
             ax.set_ylim(user_ylim)
-
-        new._plot_resume(dataset, **kwargs)
 
         return ax
 

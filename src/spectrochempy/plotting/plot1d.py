@@ -459,7 +459,6 @@ def plot_1D(dataset, method=None, **kwargs):
         if data_only:
             # if data only (we will not set axes and labels
             # it was probably done already in a previous plot
-            new._plot_resume(dataset, **kwargs)
             return ax
 
         # ------------------------------------------------------------------------
@@ -513,8 +512,6 @@ def plot_1D(dataset, method=None, **kwargs):
             ax.set_title(title)
         elif kwargs.get("plottitle", False):
             ax.set_title(new.name)
-
-        new._plot_resume(dataset, **kwargs)
 
         # masks
         if kwargs.get("show_mask", False):
@@ -1051,11 +1048,7 @@ def plot_multiple(
 
     # do not save during this plots, nor apply any commands
     # we will make this when all plots will be done
-
-    output = kwargs.get("output")
-    kwargs["output"] = None
-    commands = kwargs.get("commands", [])
-    kwargs["commands"] = []
+    # (output and commands are suppressed during batch plotting)
     legend = kwargs.pop(
         "legend",
         None,
@@ -1123,7 +1116,6 @@ def plot_multiple(
         )
 
     # now we can output the final figure
-    kw = {"output": output, "commands": commands, "show": user_show}
-    datasets[0]._plot_resume(datasets[-1], **kw)
+    # (plotting cleanup is now handled internally by plotting functions)
 
     return ax

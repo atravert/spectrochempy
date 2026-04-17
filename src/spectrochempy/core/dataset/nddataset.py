@@ -27,13 +27,13 @@ __dataset_methods__ = [  # Methods that can be called as API functions
 
 
 import textwrap
+import warnings
 
 # Lazy import to avoid triggering matplotlib at module load time
 from contextlib import suppress
 from datetime import UTC
 from datetime import datetime
 from datetime import tzinfo
-from typing import Any
 
 # Python 3.10 compatibility: UTC was added in 3.11
 UTC = UTC
@@ -662,7 +662,8 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
     _repr_dims = _str_dims
 
     def _dims_update(self, change=None):
-        # when notified that a coords names have been updated
+        # Callback for coordset changes - fires an update to dimensions
+        # Internal use only - called by traitlets observer
         _ = self.dims  # fire an update
 
     @tr.validate("_coordset")
@@ -670,8 +671,8 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
         coords = proposal["value"]
         return self._valid_coordset(coords)
 
+    # Internal use only - validates and normalizes coordset
     def _valid_coordset(self, coords):
-        # uses in coords_validate and setattr
         if coords is None:
             return None
 
@@ -865,6 +866,7 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
         List of the  `Coord` names.
 
         Read only property.
+        Note: This is a proxy to coordset.names - consider using coordset directly.
         """
         if self._coordset is not None:
             return self._coordset.names
@@ -876,6 +878,7 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
         List of the  `Coord` titles.
 
         Read only property. Use set_coordtitle to eventually set titles.
+        Note: This is a proxy to coordset.titles - consider using coordset directly.
         """
         if self._coordset is not None:
             return self._coordset.titles
@@ -887,6 +890,7 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
         List of the  `Coord` units.
 
         Read only property. Use set_coordunits to eventually set units.
+        Note: This is a proxy to coordset.units - consider using coordset directly.
         """
         if self._coordset is not None:
             return self._coordset.units
@@ -1020,11 +1024,31 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
         self.add_coordset(*args, dims=self.dims, **kwargs)
 
     def set_coordtitles(self, *args, **kwargs):
-        """Set titles of the one or more coordinates."""
+        """
+        Set titles of the one or more coordinates.
+
+        .. deprecated::
+            Use :meth:`coordset.set_titles` instead.
+        """
+        warnings.warn(
+            "set_coordtitles() is deprecated. Use coordset.set_titles() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._coordset.set_titles(*args, **kwargs)
 
     def set_coordunits(self, *args, **kwargs):
-        """Set units of the one or more coordinates."""
+        """
+        Set units of the one or more coordinates.
+
+        .. deprecated::
+            Use :meth:`coordset.set_units` instead.
+        """
+        warnings.warn(
+            "set_coordunits() is deprecated. Use coordset.set_units() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._coordset.set_units(*args, **kwargs)
 
     def sort(self, **kwargs):
@@ -1575,23 +1599,6 @@ class NDDataset(NDMath, NDIO, NDComplexArray):
 
         # Return method string and the created axes for use by plot functions
         return method or "", fig, ndaxes
-
-    def _plot_resume(self, origin: Any, **kwargs: Any) -> None:
-        """
-        Resume plot cleanup (deprecated; now handled by spectrochempy.plotting functions).
-
-        This method exists for backward compatibility but does nothing.
-        The plot functions now handle cleanup internally.
-        """
-        pass
-
-    def close_figure(self):
-        """
-        Close figure (deprecated; now handled by spectrochempy.plotting functions).
-
-        This method exists for backward compatibility but does nothing.
-        """
-        pass
 
     # ======================================================================================
     # Stub properties that raise informative errors
