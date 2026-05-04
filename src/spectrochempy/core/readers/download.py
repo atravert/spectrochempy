@@ -37,10 +37,29 @@ class IndexCheckResult(Enum):
 
 
 def _create_session(
-    total_retries=3,
-    backoff_factor=1.0,
-    status_forcelist=(500, 502, 503, 504),
+    total_retries=4,
+    backoff_factor=0.8,
+    status_forcelist=(429, 500, 502, 503, 504),
 ):
+    """Create a requests Session with retry logic."""
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (compatible; SpectroChemPy/1.0; +https://www.spectrochempy.com)",  # noqa: E501
+            "Accept": "application/x-jcamp-dx, text/html, */*",
+        }
+    )
+    retry_strategy = Retry(
+        total=total_retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+        allowed_methods=["GET"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
     """Create a requests Session with retry logic."""
     session = requests.Session()
     session.headers.update(
@@ -226,7 +245,7 @@ def load_iris():
     return new
 
 
-def download_nist_ir(CAS, index="all", delay=1.0, max_index=50):
+def download_nist_ir(CAS, index="all", delay=0.15, max_index=50):
     """
     Upload IR spectra from NIST webbook.
 
