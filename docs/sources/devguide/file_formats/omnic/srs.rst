@@ -30,7 +30,7 @@ section).
    * - ``rapid_scan.srs``
      - RapidScan
      - interferograms (643 × 4160)
-     - repeated-record layout; interferogram (data-points) axis; inter-spectrum
+     - repeated-record layout; interferogram (data-points) axis; inter-record
        trailer
    * - ``rapid_scan_reprocessed.srs``
      - RapidScan (reprocessed)
@@ -86,7 +86,7 @@ Overall file organization
     | background header |   its own X endpoints
     | / background data |
     +------------------+
-    | repeated spectrum records:
+    | repeated data records:
     |   [84-byte prefix | nx * 4-byte float32 payload | 16-byte trailer]
     |   ... x ny
     +------------------+
@@ -393,10 +393,10 @@ for some background record shapes).
 
 .. _srs-repeated-records:
 
-Repeated spectrum records
+Repeated data records
 -------------------------
 
-``[ESTABLISHED]`` In the tested SRS series, each spectrum record has the
+``[ESTABLISHED]`` In the tested SRS series, each repeated data record has the
 following layout. The same repeated-record structure is also observed for the
 rapid-scan interferograms in ``rapid_scan.srs``, so the description below is
 generic to both spectral series and interferogram records:
@@ -408,9 +408,10 @@ generic to both spectral series and interferogram records:
     ├── nx × 4-byte float32 intensity payload
     └── 16-byte trailer
 
-* ``[ESTABLISHED]`` The **spectrum name is null-terminated inside the
-  84-byte prefix**; the prefix also carries binary metadata (per-file mostly
-  constant fields and a per-spectrum minimum-Y value).
+* ``[ESTABLISHED]`` For spectral records, the **spectrum name is
+  null-terminated inside the 84-byte prefix**; the prefix also carries binary
+  metadata (per-file mostly constant fields and a per-spectrum minimum-Y
+  value).
 * ``[ESTABLISHED]`` The payload boundaries reproduce the data arrays exactly
   in independent binary reconstruction (stride
   `84 + nx·4 + 16` bytes per record).
@@ -442,8 +443,8 @@ generic to both spectral series and interferogram records:
 
 .. _srs-inter-spectrum-trailer:
 
-Inter-spectrum trailer (16 bytes; trailer-relative offsets)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Inter-record trailer (16 bytes; trailer-relative offsets)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``[ESTABLISHED]`` Tested records (both spectral series and rapid-scan
 interferograms) are followed by a 16-byte trailer.
